@@ -1,0 +1,23 @@
+# Raw dataset + built graph — hundreds of MB, exceeds GitHub's 100MB file
+# limit outright. These live in Google Drive (see architecture.md), not git.
+the_files_with(.pt)/
+
+# Generated training artifacts (regenerable by re-running the scripts;
+# keeping git from filling up with re-run output every time)
+*.pkl
+paysim_graph*.pt
+FraudGNN*.pt
+GCN_*_model.pt
+SAGE_*_model.pt
+*_results.csv
+*_tier_breakdown_*.csv
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS cruft
+.DS_Store
+Thumbs.db
