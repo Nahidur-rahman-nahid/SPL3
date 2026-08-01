@@ -1,0 +1,8 @@
+.env
+fraud.db
+# Model checkpoint + fitted preprocessing artifacts — large binaries that
+# belong in Drive, not git (see README.md for how to obtain them locally).
+model/*.pt
+model/*.pkl
+__pycache__/
+*.pyc

@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+redis
+joblib
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+pydantic-settings
+torch
+torch_geometric
+# FraudGNN_main.pt's checkpoint embeds a numpy.float64 (from sklearn's
+# roc_auc_score). numpy<2.0 can't unpickle it (numpy.core -> numpy._core
+# reorg in 2.0) — pin the floor so a fresh install doesn't hit that crash.
+numpy>=2.0
+pandas>=2.2

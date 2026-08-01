@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: fraud_postgres
+    environment:
+      POSTGRES_USER: fraud_user
+      POSTGRES_PASSWORD: fraud_pass
+      POSTGRES_DB: fraud_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fraud_user -d fraud_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+# redis, zookeeper, kafka, and the backend service itself get added here as
+# later build phases wire them in (see architecture.md section 12).
+
+volumes:
+  postgres_data:
