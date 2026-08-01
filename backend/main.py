@@ -10,12 +10,15 @@ Run locally:
 Then open http://127.0.0.1:8000/docs for interactive testing (Swagger UI
 has an "Authorize" button once you've logged in — easier than curl).
 
-What /score does now: looks up recent transactions for both the sender and
-receiver account from Redis (the live graph memory, architecture.md section
-5), merges those with any explicitly-supplied `neighbours` in the request,
-scores with the real-time subgraph, persists the decision, registers the
-transaction back into Redis for future lookups, and broadcasts the result
-over WebSocket (/ws/alerts) to every connected dashboard client.
+The actual scoring work (Redis neighbour lookup, inference, persistence,
+Redis self-registration, WebSocket broadcast) lives in one place —
+scoring_pipeline.process_transaction() — used by BOTH:
+  - POST /score, for manually/API-triggered scoring, and
+  - stream_simulator.py's background loop, started at startup, which
+    continuously generates realistic transactions so the dashboard has a
+    live feed to watch without anyone needing to click anything. This
+    stands in for a Kafka producer/consumer (see stream_simulator.py's
+    docstring for why) — toggle it via POST /api/stream/toggle.
 
 curl smoke test:
     curl -X POST http://127.0.0.1:8000/auth/login \\
@@ -29,6 +32,7 @@ curl smoke test:
            "neighbours":[]}'
 """
 
+import asyncio
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -38,12 +42,15 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+import escalation
 import ml_service
 import models
-import redis_client
 import schemas
+import stream_simulator
 from auth import authenticate_user, create_access_token, decode_user_from_token, get_current_user
+from config import settings
 from database import Base, engine, get_db
+from scoring_pipeline import process_transaction
 from websocket_manager import manager
 
 app = FastAPI(title="Fraud Detection Backend")
@@ -58,9 +65,11 @@ app.add_middleware(
 
 
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
     Base.metadata.create_all(bind=engine)
     ml_service.load_model()
+    asyncio.create_task(stream_simulator.run_stream())
+    asyncio.create_task(escalation.run_escalation_watch())
 
 
 @app.get("/health")
@@ -77,97 +86,25 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     return schemas.Token(access_token=token, role=user["role"])
 
 
-def _merge_redis_neighbours(request: schemas.ScoreRequest) -> None:
-    """Fetches recent transactions for both accounts from Redis, dedupes
-    against each other and the current transaction, and prepends them to
-    request.neighbours (mutated in place) alongside whatever the caller
-    already supplied."""
-    seen_ids = {request.transaction_id}
-    redis_features = []
-
-    for account_id in (request.sender_account, request.receiver_account):
-        for entry in redis_client.get_recent_transactions(account_id):
-            txn_id = entry.get("transaction_id")
-            if txn_id in seen_ids:
-                continue
-            seen_ids.add(txn_id)
-            try:
-                redis_features.append(schemas.TransactionFeatures(**{k: v for k, v in entry.items() if k != "transaction_id"}))
-            except Exception:
-                continue  # skip malformed/legacy entries rather than fail the whole request
-
-    request.neighbours = redis_features + list(request.neighbours)
-
-
 @app.post("/score", response_model=schemas.ScoreResponse)
 async def score(
     request: schemas.ScoreRequest,
     db: Session = Depends(get_db),
     _user: dict = Depends(get_current_user),
 ):
-    _merge_redis_neighbours(request)
-    result = ml_service.score_transaction(request)
-
-    existing = db.get(models.Transaction, request.transaction_id)
-    if existing is None:
-        f = request.features
-        db.add(models.Transaction(
-            transaction_id=request.transaction_id,
-            sender_account=request.sender_account,
-            receiver_account=request.receiver_account,
-            amount=f.amount,
-            transaction_type=f.type,
-            step=int(f.step),
-            old_balance_sender=f.oldbalanceOrg,
-            new_balance_sender=f.newbalanceOrig,
-            old_balance_receiver=f.oldbalanceDest,
-            new_balance_receiver=f.newbalanceDest,
-        ))
-
-    decided_at = datetime.now(timezone.utc)
-    decision_row = models.FraudDecision(
-        transaction_id=request.transaction_id,
-        fraud_probability=result["fraud_probability"],
-        decision=result["decision"],
-        risk_level=result["risk_level"],
-        explanation=result["explanation"],
-        neighbour_count=result["neighbour_count"],
-        inference_latency_ms=result["inference_latency_ms"],
-        decided_at=decided_at,
-    )
-    db.add(decision_row)
-    db.flush()  # populate decision_row.decision_id before using it below
-
-    alert_id = None
-    if result["decision"] == "BLOCK":
-        alert = models.Alert(decision_id=decision_row.decision_id, pushed_at=decided_at)
-        db.add(alert)
-        db.flush()
-        alert_id = alert.alert_id
-
-    db.commit()
-
-    redis_client.store_transaction(
-        request.transaction_id, request.sender_account, request.receiver_account, request.features.model_dump()
-    )
-
-    await manager.broadcast({
-        "type": "new_decision",
-        "decision_id": decision_row.decision_id,
-        "transaction_id": request.transaction_id,
-        "sender_account": request.sender_account,
-        "receiver_account": request.receiver_account,
-        "amount": request.features.amount,
-        "fraud_probability": result["fraud_probability"],
-        "decision": result["decision"],
-        "risk_level": result["risk_level"],
-        "decided_at": decided_at.isoformat(),
-        "alert_id": alert_id,
-        "acknowledged_by": None,
-        "is_false_positive": False,
-    })
-
+    result = await process_transaction(request, db, source="api")
     return schemas.ScoreResponse(**result)
+
+
+@app.get("/api/stream/status")
+def get_stream_status(_user: dict = Depends(get_current_user)):
+    return {"enabled": stream_simulator.is_enabled(), "interval_seconds": settings.STREAM_INTERVAL_SECONDS}
+
+
+@app.post("/api/stream/toggle")
+def toggle_stream(_user: dict = Depends(get_current_user)):
+    stream_simulator.set_enabled(not stream_simulator.is_enabled())
+    return {"enabled": stream_simulator.is_enabled()}
 
 
 @app.websocket("/ws/alerts")
@@ -189,6 +126,8 @@ async def ws_alerts(websocket: WebSocket, token: str = ""):
 def get_results(
     limit: int = 100,
     risk_level: Optional[str] = None,
+    only_alerts: bool = False,
+    unacknowledged_only: bool = False,
     db: Session = Depends(get_db),
     _user: dict = Depends(get_current_user),
 ):
@@ -200,6 +139,10 @@ def get_results(
     )
     if risk_level:
         query = query.filter(models.FraudDecision.risk_level == risk_level.upper())
+    if only_alerts:
+        query = query.filter(models.Alert.alert_id.isnot(None))
+    if unacknowledged_only:
+        query = query.filter(models.Alert.acknowledged_at.is_(None))
 
     rows = query.limit(limit).all()
     return [
@@ -212,10 +155,13 @@ def get_results(
             fraud_probability=decision.fraud_probability,
             decision=decision.decision,
             risk_level=decision.risk_level,
+            explanation=decision.explanation,
             decided_at=decision.decided_at,
             alert_id=alert.alert_id if alert else None,
             acknowledged_by=alert.acknowledged_by if alert else None,
             is_false_positive=alert.is_false_positive if alert else False,
+            escalated=alert.escalated if alert else False,
+            escalated_at=alert.escalated_at if alert else None,
         )
         for decision, txn, alert in rows
     ]

@@ -75,8 +75,12 @@ export function scoreTransaction(payload) {
   return apiFetch("/score", { method: "POST", body: JSON.stringify(payload) });
 }
 
-export function getResults(limit = 50) {
-  return apiFetch(`/api/fraud/results?limit=${limit}`);
+export function getResults({ limit = 50, riskLevel, onlyAlerts, unacknowledgedOnly } = {}) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (riskLevel) params.set("risk_level", riskLevel);
+  if (onlyAlerts) params.set("only_alerts", "true");
+  if (unacknowledgedOnly) params.set("unacknowledged_only", "true");
+  return apiFetch(`/api/fraud/results?${params.toString()}`);
 }
 
 export function getStats() {
@@ -88,4 +92,12 @@ export function acknowledgeAlert(alertId, ackedBy, isFalsePositive) {
     method: "POST",
     body: JSON.stringify({ acknowledged_by: ackedBy, is_false_positive: isFalsePositive }),
   });
+}
+
+export function getStreamStatus() {
+  return apiFetch("/api/stream/status");
+}
+
+export function toggleStream() {
+  return apiFetch("/api/stream/toggle", { method: "POST" });
 }

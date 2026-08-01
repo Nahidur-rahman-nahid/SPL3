@@ -43,6 +43,26 @@ class Settings(BaseSettings):
     REVIEW_MAX: float = 0.75  # == BLOCK_THRESHOLD
     HIGH_MAX: float = 0.90
 
+    # Live transaction stream simulator (stream_simulator.py) — stands in
+    # for a Kafka producer/consumer (see that file's docstring for why).
+    STREAM_ENABLED: bool = False
+    STREAM_INTERVAL_SECONDS: float = 2.0
+
+    # Alert policy (decision_engine.py) — deliberately separate from
+    # LOW_MAX/REVIEW_MAX/HIGH_MAX above. Those three drive what tier a
+    # caller is TOLD (ALLOW/REVIEW/BLOCK); this drives who actually lands
+    # in the analyst review queue. Default (0.40 == LOW_MAX) means both
+    # REVIEW and BLOCK tiers alert, but it can be tuned independently
+    # (e.g. raised to only alert on high-confidence BLOCK) without
+    # touching the tiering thresholds themselves.
+    ALERT_THRESHOLD: float = 0.40
+
+    # escalation.py: an unacknowledged alert older than this gets flagged
+    # "escalated" and re-broadcast so it stands out in the UI. Stands in
+    # for a real paging/email SLA timer — see escalation.py's docstring.
+    ALERT_SLA_MINUTES: float = 10.0
+    ALERT_ESCALATION_CHECK_SECONDS: float = 60.0
+
     class Config:
         env_file = ".env"
 

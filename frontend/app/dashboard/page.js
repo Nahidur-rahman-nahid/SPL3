@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { getRole, getStats, isAuthenticated, logout } from "@/lib/api";
 import StatsPanel from "@/components/StatsPanel";
 import ScoreForm from "@/components/ScoreForm";
 import LiveFeed from "@/components/LiveFeed";
 
 // Fallback safety-net poll in case the WebSocket drops silently — the
-// primary refresh path is now onEvent(), fired immediately when LiveFeed's
+// primary refresh path is onEvent(), fired immediately when LiveFeed's
 // WebSocket delivers a new decision, not this interval.
 const STATS_FALLBACK_POLL_MS = 15000;
 
@@ -57,6 +58,12 @@ export default function DashboardPage() {
           <p className="text-xs text-slate-500">Graph Neural Network — real-time transaction scoring</p>
         </div>
         <div className="flex items-center gap-4">
+          <Link href="/alerts" className="text-sm text-slate-400 hover:text-white transition-colors">
+            Alerts & Review Queue →
+          </Link>
+          <Link href="/stream" className="text-sm text-slate-400 hover:text-white transition-colors">
+            Live Stream Monitor →
+          </Link>
           {role && <span className="text-xs px-2 py-1 rounded bg-slate-800 text-slate-300">{role}</span>}
           <button onClick={handleLogout} className="text-sm text-slate-400 hover:text-white transition-colors">
             Log out

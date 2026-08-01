@@ -44,7 +44,7 @@ export default function SubgraphViz({ center, neighbours, decision }) {
         {/* edges first, so nodes draw on top */}
         {positions.map((p, i) => (
           <line
-            key={`edge-${neighbours[i].id}`}
+            key={`edge-${neighbours[i].transaction_id}`}
             x1={CENTER}
             y1={CENTER}
             x2={p.x}
@@ -54,9 +54,14 @@ export default function SubgraphViz({ center, neighbours, decision }) {
           />
         ))}
 
-        {/* neighbour nodes */}
+        {/* neighbour nodes — native SVG <title> gives a free browser tooltip
+            on hover with the exact figures, so labels don't need to stay
+            permanently visible (and legible) at any node count. */}
         {positions.map((p, i) => (
-          <g key={neighbours[i].id}>
+          <g key={neighbours[i].transaction_id} className="cursor-default">
+            <title>
+              {`${neighbours[i].edge_type ? neighbours[i].edge_type + " · " : ""}${neighbours[i].type} · amount ${Number(neighbours[i].amount).toLocaleString()} · step ${neighbours[i].step}`}
+            </title>
             <circle cx={p.x} cy={p.y} r={NEIGHBOUR_NODE_R} fill="#1e293b" stroke="#64748b" strokeWidth="1.5" />
             <text x={p.x} y={p.y + 4} textAnchor="middle" fontSize="9" fill="#cbd5e1">
               {neighbours[i].type === "CASH_OUT" ? "CO" : "TR"}
@@ -72,16 +77,21 @@ export default function SubgraphViz({ center, neighbours, decision }) {
             consistency; the decision label goes below, like the amount
             label on neighbour nodes, since two lines never fit inside a
             circle this size. */}
-        <circle cx={CENTER} cy={CENTER} r={CENTER_NODE_R} fill={centerColor} fillOpacity="0.15" stroke={centerColor} strokeWidth="2.5" />
-        <text x={CENTER} y={CENTER + 4} textAnchor="middle" fontSize="12" fontWeight="600" fill={centerColor}>
-          {center?.type === "CASH_OUT" ? "CO" : "TR"}
-        </text>
-        <text x={CENTER} y={CENTER + CENTER_NODE_R + 16} textAnchor="middle" fontSize="11" fontWeight="600" fill={centerColor}>
-          {decision}
-        </text>
+        <g className="cursor-default">
+          <title>
+            {`${center?.type || "transaction"} · amount ${center?.amount != null ? Number(center.amount).toLocaleString() : "?"} · ${decision}`}
+          </title>
+          <circle cx={CENTER} cy={CENTER} r={CENTER_NODE_R} fill={centerColor} fillOpacity="0.15" stroke={centerColor} strokeWidth="2.5" />
+          <text x={CENTER} y={CENTER + 4} textAnchor="middle" fontSize="12" fontWeight="600" fill={centerColor}>
+            {center?.type === "CASH_OUT" ? "CO" : "TR"}
+          </text>
+          <text x={CENTER} y={CENTER + CENTER_NODE_R + 16} textAnchor="middle" fontSize="11" fontWeight="600" fill={centerColor}>
+            {decision}
+          </text>
+        </g>
       </svg>
       <p className="text-center text-xs text-slate-500 mt-1">
-        the actual subgraph scored — {n} related transaction{n === 1 ? "" : "s"} connected to this one
+        the actual subgraph scored — {n} related transaction{n === 1 ? "" : "s"} connected to this one · hover a node for exact figures
       </p>
     </div>
   );

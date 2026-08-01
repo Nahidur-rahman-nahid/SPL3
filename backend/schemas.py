@@ -58,10 +58,13 @@ class FraudResultOut(BaseModel):
     fraud_probability: float
     decision: str
     risk_level: str
+    explanation: Optional[dict] = None
     decided_at: datetime
     alert_id: Optional[int] = None
     acknowledged_by: Optional[str] = None
     is_false_positive: bool = False
+    escalated: bool = False
+    escalated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
