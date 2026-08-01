@@ -2,6 +2,13 @@
 Loads the trained FraudGNN checkpoint once at startup and scores individual
 transactions in real time (use_batch=False — RealTimeNet only, matching
 architecture.md section 5: no full graph is ever loaded in production).
+
+This is the Detection Engine (spec item 2) and ONLY the detection engine —
+it answers "how likely is this fraud" and nothing else. Tiering
+(ALLOW/REVIEW/BLOCK), explanations, and alert policy live in
+decision_engine.py (spec item 4), which calls score() below. Keeping the
+seam here means swapping the model checkpoint never touches alerting
+policy, and retuning alerting policy never touches inference.
 """
 
 import time
@@ -11,7 +18,7 @@ import torch
 
 from config import settings
 from gnn_model import FraudGNN
-from schemas import ScoreRequest, TransactionFeatures
+from schemas import TransactionFeatures
 
 # Must match 01_load_paysim.py exactly: scale_cols = ["amount"] + BALANCE_COLS
 SCALE_COLS = ["amount", "oldbalanceOrg", "newbalanceOrig", "oldbalanceDest", "newbalanceDest"]
@@ -42,6 +49,12 @@ def load_model():
     return _model
 
 
+def current_tiers() -> dict:
+    """Read-only access for decision_engine.py's tiering — tiers are owned
+    here because they can be embedded in the model checkpoint itself."""
+    return _tiers
+
+
 def _features_to_vector(features: TransactionFeatures) -> list:
     """Applies the SAME LabelEncoder + StandardScaler fit during training
     (01_load_paysim.py) to a raw transaction, so real-time inference sees
@@ -56,23 +69,11 @@ def _features_to_vector(features: TransactionFeatures) -> list:
     return [features.step, type_encoded, amount_s, old_orig_s, new_orig_s, old_dest_s, new_dest_s]
 
 
-def _tier_decision(prob: float) -> tuple:
-    if prob < _tiers["low_max"]:
-        return "ALLOW", "LOW"
-    if prob < _tiers["review_max"]:
-        return "REVIEW", "MEDIUM"
-    if prob < _tiers["high_max"]:
-        return "BLOCK", "HIGH"
-    return "BLOCK", "CRITICAL"
-
-
-def score_transaction(request: ScoreRequest) -> dict:
+def _infer(target: TransactionFeatures, neighbours: list) -> float:
     if _model is None:
         raise RuntimeError("Model not loaded — call load_model() at startup")
 
-    start = time.perf_counter()
-
-    all_features = [request.features] + list(request.neighbours)
+    all_features = [target] + list(neighbours)
     x = torch.tensor([_features_to_vector(f) for f in all_features], dtype=torch.float, device=_device)
 
     n = len(all_features)
@@ -88,36 +89,15 @@ def score_transaction(request: ScoreRequest) -> dict:
 
     with torch.no_grad():
         probs = _model(x, edge_index, use_batch=False)
-    fraud_probability = float(probs[0].item())
+    return float(probs[0].item())
 
-    decision, risk_level = _tier_decision(fraud_probability)
+
+def score(target: TransactionFeatures, neighbours: list) -> tuple:
+    """Pure inference: raw fraud probability (0-1) for `target` given its
+    subgraph `neighbours`, plus how long that took. No tiering, no
+    persistence, no side effects — safe to call repeatedly (decision_engine
+    uses this for leave-one-out neighbour contribution scoring)."""
+    start = time.perf_counter()
+    fraud_probability = _infer(target, neighbours)
     latency_ms = int((time.perf_counter() - start) * 1000)
-
-    # Neighbour details for the frontend's subgraph visualization — this is
-    # literally the same star-graph structure just fed to RealTimeNet above
-    # (node 0 = target, nodes 1..N = neighbours), not a separate illustration.
-    neighbour_details = [
-        {"id": f"n{i}", "type": f.type, "amount": f.amount, "step": f.step}
-        for i, f in enumerate(request.neighbours)
-    ]
-
-    explanation = {
-        "neighbour_count": len(request.neighbours),
-        "summary": (
-            f"{len(request.neighbours)} related transaction(s) found for "
-            f"{request.sender_account} / {request.receiver_account} within the lookup window."
-            if request.neighbours
-            else "No related transactions found in the lookup window — scored on this transaction's own features alone."
-        ),
-        "neighbours": neighbour_details,
-    }
-
-    return {
-        "transaction_id": request.transaction_id,
-        "fraud_probability": fraud_probability,
-        "decision": decision,
-        "risk_level": risk_level,
-        "explanation": explanation,
-        "neighbour_count": len(request.neighbours),
-        "inference_latency_ms": latency_ms,
-    }
+    return fraud_probability, latency_ms

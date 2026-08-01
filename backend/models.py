@@ -86,6 +86,8 @@ class Alert(Base):
     acknowledged_by = Column(String, nullable=True)
     acknowledged_at = Column(DateTime, nullable=True)
     is_false_positive = Column(Boolean, default=False)
+    escalated = Column(Boolean, default=False)
+    escalated_at = Column(DateTime, nullable=True)
 
     decision = relationship("FraudDecision", back_populates="alerts")
 

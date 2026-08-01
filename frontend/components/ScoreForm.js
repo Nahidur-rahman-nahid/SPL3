@@ -65,8 +65,24 @@ export default function ScoreForm({ onScored }) {
     setError("");
   }
 
+  // Editing any field manually moves the form out of "this exactly matches
+  // a preset" state, so none of the preset buttons stay highlighted.
+  function updateField(key, value) {
+    setPresetKey(null);
+    setForm((f) => ({ ...f, [key]: value }));
+  }
+
   function updateAmount(value) {
+    setPresetKey(null);
     setForm((f) => ({ ...f, features: { ...f.features, amount: Number(value), oldbalanceOrg: Number(value), newbalanceDest: Number(value) } }));
+  }
+
+  // Guaranteed-never-seen account ID (base36 timestamp) -- the point is to
+  // demonstrate the model scoring an account it (and Redis) have literally
+  // never encountered before, which is exactly what "inductive" means.
+  function generateNewAccountId(field) {
+    const id = `C_NEW_${Date.now().toString(36).toUpperCase()}`;
+    updateField(field, id);
   }
 
   async function handleSubmit(e) {
@@ -116,11 +132,41 @@ export default function ScoreForm({ onScored }) {
       <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-4">
         <div>
           <label className="block text-xs text-slate-500 mb-1">Sender</label>
-          <div className="text-sm text-slate-300 font-mono">{form.sender_account}</div>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="text"
+              value={form.sender_account}
+              onChange={(e) => updateField("sender_account", e.target.value)}
+              className="w-40 rounded-md bg-slate-800 border border-slate-700 px-2 py-1.5 text-sm text-slate-300 font-mono"
+            />
+            <button
+              type="button"
+              onClick={() => generateNewAccountId("sender_account")}
+              title="Insert a guaranteed-never-seen account ID — demonstrates inductive scoring on a brand-new account"
+              className="text-xs px-2 py-1.5 rounded-md border border-slate-700 text-slate-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors whitespace-nowrap"
+            >
+              New ID
+            </button>
+          </div>
         </div>
         <div>
           <label className="block text-xs text-slate-500 mb-1">Receiver</label>
-          <div className="text-sm text-slate-300 font-mono">{form.receiver_account}</div>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="text"
+              value={form.receiver_account}
+              onChange={(e) => updateField("receiver_account", e.target.value)}
+              className="w-40 rounded-md bg-slate-800 border border-slate-700 px-2 py-1.5 text-sm text-slate-300 font-mono"
+            />
+            <button
+              type="button"
+              onClick={() => generateNewAccountId("receiver_account")}
+              title="Insert a guaranteed-never-seen account ID — demonstrates inductive scoring on a brand-new account"
+              className="text-xs px-2 py-1.5 rounded-md border border-slate-700 text-slate-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors whitespace-nowrap"
+            >
+              New ID
+            </button>
+          </div>
         </div>
         <div>
           <label className="block text-xs text-slate-500 mb-1">Amount</label>
@@ -150,7 +196,7 @@ export default function ScoreForm({ onScored }) {
         <div className={`mt-4 rounded-lg border p-4 ${RESULT_STYLES[result.decision] || ""}`}>
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="text-lg font-semibold">
-              {result.decision} · {result.risk_level}
+              {result.decision} {result.risk_level}
             </div>
             <div className="text-sm opacity-80">
               fraud probability: {(result.fraud_probability * 100).toFixed(1)}% · scored in {result.inference_latency_ms}ms

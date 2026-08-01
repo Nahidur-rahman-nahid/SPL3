@@ -28,7 +28,7 @@ export default function LiveFeed({ onEvent }) {
 
   const loadInitial = useCallback(async () => {
     try {
-      const data = await getResults(MAX_ROWS);
+      const data = await getResults({ limit: MAX_ROWS });
       setRows(data);
     } catch {
       // WebSocket will still deliver new events even if this initial load fails
@@ -141,7 +141,7 @@ export default function LiveFeed({ onEvent }) {
                 <td className="px-4 py-2 text-right text-slate-300">{(r.fraud_probability * 100).toFixed(1)}%</td>
                 <td className="px-4 py-2">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${BADGE_STYLES[r.decision] || ""}`}>
-                    {r.decision} · {r.risk_level}
+                    {r.decision} {r.risk_level}
                   </span>
                 </td>
                 <td className="px-4 py-2 whitespace-nowrap">
