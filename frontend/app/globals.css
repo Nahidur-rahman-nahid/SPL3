@@ -24,3 +24,21 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Plays once when a NEW element mounts (e.g. a fresh live-stream event card) —
+   relies on React only creating a new DOM node for genuinely new list items
+   (matched by key), so existing rows are untouched and never re-animate. */
+@keyframes slide-in-fade {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in-fade 0.35s ease-out;
+}
