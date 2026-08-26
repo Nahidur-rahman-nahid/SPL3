@@ -11,13 +11,39 @@ class Settings(BaseSettings):
     # Auth
     SECRET_KEY: str = "dev-only-secret-change-me"  # MUST be overridden in production
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # Dev login accounts. Override via env vars before deploying anywhere real.
-    ADMIN_USERNAME: str = "admin"
-    ADMIN_PASSWORD: str = "admin123"
-    ANALYST_USERNAME: str = "analyst"
-    ANALYST_PASSWORD: str = "analyst123"
+    # Session cookies. Locally, frontend (localhost:3000) and backend
+    # (localhost:8000) are "same-site" per RFC 6265 (cookie scoping never
+    # includes port), so COOKIE_SECURE=False + COOKIE_SAMESITE=lax works over
+    # plain http. A real deployment with frontend/backend on different
+    # domains is cross-site and MUST set COOKIE_SECURE=True and
+    # COOKIE_SAMESITE=none (browsers reject SameSite=None without Secure) —
+    # see main.py's startup check, which refuses to start on a bad
+    # combination. Note Safari/Chrome third-party-cookie restrictions may
+    # still block a SameSite=None cross-domain cookie by default; the real
+    # fix there is serving frontend+backend from the same parent domain.
+    COOKIE_SECURE: bool = False
+    COOKIE_SAMESITE: str = "lax"
+
+    # Comma-separated list of allowed frontend origins for CORS. Must be
+    # explicit (no wildcard) since allow_credentials=True is required for
+    # cookie-based auth to work cross-origin.
+    CORS_ORIGINS: str = "http://localhost:3000"
+
+    # One-time bootstrap admin, seeded only if the users table is empty (see
+    # main.py startup). All other accounts are created via POST /auth/users
+    # by an existing admin — there is no public signup.
+    BOOTSTRAP_ADMIN_USERNAME: str = "admin"
+    BOOTSTRAP_ADMIN_EMAIL: str = "admin@example.com"
+    BOOTSTRAP_ADMIN_PASSWORD: str = "change-me-on-first-login"
+
+    # Failed-login lockout (backend/rate_limit.py). Fails open (doesn't block
+    # login) if Redis is unreachable — same degrade-gracefully policy as the
+    # Redis-backed neighbour lookup in redis_client.py.
+    LOGIN_MAX_ATTEMPTS: int = 5
+    LOGIN_LOCKOUT_MINUTES: float = 15.0
 
     # Database — defaults to a local SQLite file so you can run this with zero
     # setup. Point DATABASE_URL at Postgres (e.g. from Render) for production:
@@ -62,6 +88,10 @@ class Settings(BaseSettings):
     # for a real paging/email SLA timer — see escalation.py's docstring.
     ALERT_SLA_MINUTES: float = 10.0
     ALERT_ESCALATION_CHECK_SECONDS: float = 60.0
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     class Config:
         env_file = ".env"

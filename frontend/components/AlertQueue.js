@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { acknowledgeAlert, buildAlertsSocketUrl, getResults, getUsername } from "@/lib/api";
+import { acknowledgeAlert, buildAlertsSocketUrl, getResults } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
 // This page is the Alert & Decision Engine surfaced as its own feature —
 // everything here is downstream of a probability ml_service.py already
@@ -37,6 +38,7 @@ function formatContribution(value) {
 }
 
 export default function AlertQueue() {
+  const { user } = useAuth();
   const [tab, setTab] = useState("needs_review");
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -116,8 +118,8 @@ export default function AlertQueue() {
   async function handleAcknowledge(row, isFalsePositive) {
     setAckingId(row.alert_id);
     try {
-      const ackedBy = getUsername() || "unknown";
-      await acknowledgeAlert(row.alert_id, ackedBy, isFalsePositive);
+      await acknowledgeAlert(row.alert_id, isFalsePositive);
+      const ackedBy = user?.username || "unknown";
       setRows((prev) =>
         prev.map((r) => (r.alert_id === row.alert_id ? { ...r, acknowledged_by: ackedBy, is_false_positive: isFalsePositive } : r))
       );

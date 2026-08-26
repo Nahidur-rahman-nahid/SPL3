@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("admin");
+  const { refetch } = useAuth();
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -16,8 +18,9 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      await login(username, password);
-      router.push("/dashboard");
+      const loggedInUser = await login(username, password);
+      await refetch();
+      router.push(loggedInUser.must_change_password ? "/account" : "/dashboard");
     } catch (err) {
       setError(err.message || "Login failed.");
     } finally {
@@ -40,6 +43,7 @@ export default function LoginPage() {
           onChange={(e) => setUsername(e.target.value)}
           className="w-full mb-4 rounded-md bg-slate-800 border border-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
           autoComplete="username"
+          autoFocus
         />
 
         <label className="block text-xs font-medium text-slate-400 mb-1">Password</label>
@@ -62,8 +66,7 @@ export default function LoginPage() {
         </button>
 
         <p className="text-xs text-slate-500 mt-4">
-          Demo accounts: <span className="text-slate-400">admin / admin123</span> (ADMIN) or{" "}
-          <span className="text-slate-400">analyst / analyst123</span> (ANALYST)
+          No account? Ask an admin to create one for you.
         </p>
       </form>
     </div>

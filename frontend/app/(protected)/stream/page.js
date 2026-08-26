@@ -3,13 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  buildAlertsSocketUrl,
-  getStreamStatus,
-  isAuthenticated,
-  logout,
-  toggleStream,
-} from "@/lib/api";
+import { buildAlertsSocketUrl, getStreamStatus, toggleStream } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
 const MAX_TICKER_ITEMS = 20;
 const RECONNECT_DELAY_MS = 3000;
@@ -31,7 +26,7 @@ function StatTile({ label, value, accent = "text-white" }) {
 
 export default function StreamMonitorPage() {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
+  const { role, logout } = useAuth();
   const [connected, setConnected] = useState(false);
   const [streamEnabled, setStreamEnabled] = useState(null); // null = not loaded yet
   const [toggling, setToggling] = useState(false);
@@ -43,22 +38,12 @@ export default function StreamMonitorPage() {
   const reconnectTimerRef = useRef(null);
 
   useEffect(() => {
-    if (!isAuthenticated()) {
-      router.replace("/login");
-      return;
-    }
-    setReady(true);
-  }, [router]);
-
-  useEffect(() => {
-    if (!ready) return;
     getStreamStatus()
       .then((s) => setStreamEnabled(s.enabled))
       .catch(() => {});
-  }, [ready]);
+  }, []);
 
   useEffect(() => {
-    if (!ready) return;
     let cancelled = false;
 
     function connect() {
@@ -98,7 +83,7 @@ export default function StreamMonitorPage() {
       clearTimeout(reconnectTimerRef.current);
       socketRef.current?.close();
     };
-  }, [ready]);
+  }, []);
 
   async function handleToggle() {
     setToggling(true);
@@ -112,12 +97,10 @@ export default function StreamMonitorPage() {
     }
   }
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    await logout();
     router.replace("/login");
   }
-
-  if (!ready) return null;
 
   const elapsedMinutes = Math.max((Date.now() - startTimeRef.current) / 60000, 1 / 60);
   const perMinute = sessionStats.total / elapsedMinutes;
@@ -161,17 +144,24 @@ export default function StreamMonitorPage() {
               {connected ? "Connected — receiving live decisions" : "Reconnecting…"}
             </span>
           </div>
-          <button
-            onClick={handleToggle}
-            disabled={toggling || streamEnabled === null}
-            className={`text-sm font-medium px-4 py-2 rounded-md transition-colors disabled:opacity-50 ${
-              streamEnabled
-                ? "bg-rose-600 hover:bg-rose-500 text-white"
-                : "bg-emerald-600 hover:bg-emerald-500 text-white"
-            }`}
-          >
-            {streamEnabled === null ? "…" : streamEnabled ? "Pause Stream" : "Resume Stream"}
-          </button>
+          {role === "ADMIN" ? (
+            <button
+              onClick={handleToggle}
+              disabled={toggling || streamEnabled === null}
+              className={`text-sm font-medium px-4 py-2 rounded-md transition-colors disabled:opacity-50 ${
+                streamEnabled
+                  ? "bg-rose-600 hover:bg-rose-500 text-white"
+                  : "bg-emerald-600 hover:bg-emerald-500 text-white"
+              }`}
+            >
+              {streamEnabled === null ? "…" : streamEnabled ? "Pause Stream" : "Resume Stream"}
+            </button>
+          ) : (
+            <span className="text-xs px-3 py-2 rounded-md bg-slate-800 text-slate-400">
+              {streamEnabled === null ? "…" : streamEnabled ? "Stream running" : "Stream paused"}
+              <span className="text-slate-600"> · admin-only control</span>
+            </span>
+          )}
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { acknowledgeAlert, buildAlertsSocketUrl, getResults, getUsername } from "@/lib/api";
+import { acknowledgeAlert, buildAlertsSocketUrl, getResults } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
 const ROW_STYLES = {
   ALLOW: "border-l-4 border-emerald-500",
@@ -19,6 +20,7 @@ const MAX_ROWS = 50;
 const RECONNECT_DELAY_MS = 3000;
 
 export default function LiveFeed({ onEvent }) {
+  const { user } = useAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
@@ -93,8 +95,8 @@ export default function LiveFeed({ onEvent }) {
   async function handleAcknowledge(row, isFalsePositive) {
     setAckingId(row.alert_id);
     try {
-      const ackedBy = getUsername() || "unknown";
-      await acknowledgeAlert(row.alert_id, ackedBy, isFalsePositive);
+      await acknowledgeAlert(row.alert_id, isFalsePositive);
+      const ackedBy = user?.username || "unknown";
       setRows((prev) =>
         prev.map((r) => (r.alert_id === row.alert_id ? { ...r, acknowledged_by: ackedBy, is_false_positive: isFalsePositive } : r))
       );

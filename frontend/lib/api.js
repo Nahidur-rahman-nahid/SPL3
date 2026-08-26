@@ -1,75 +1,145 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
-function getToken() {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("token");
+// Auth is entirely cookie-based (see backend/auth.py) — access_token and
+// refresh_token are httpOnly (never touched here), csrf_token is the one
+// cookie the frontend does read, so it can be echoed back as a header on
+// mutating requests (double-submit CSRF defense).
+function getCsrfToken() {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
-async function apiFetch(path, options = {}) {
-  const token = getToken();
+const MUTATING_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
+
+// Concurrent 401s must share one in-flight /auth/refresh call rather than
+// each firing their own — the backend's refresh-token rotation treats a
+// second, independent use of the same (still valid) refresh token as reuse
+// and revokes the whole session, which would otherwise force a surprise
+// logout whenever two requests raced.
+let refreshPromise = null;
+
+function refreshSession() {
+  if (!refreshPromise) {
+    refreshPromise = fetch(`${API_BASE}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "X-CSRF-Token": getCsrfToken() || "" },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("refresh failed");
+        return res.json();
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+async function apiFetch(path, options = {}, _isRetry = false) {
+  const method = (options.method || "GET").toUpperCase();
   const headers = { ...(options.headers || {}) };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
   if (options.body && typeof options.body === "string") {
     headers["Content-Type"] = "application/json";
   }
+  if (MUTATING_METHODS.has(method)) {
+    headers["X-CSRF-Token"] = getCsrfToken() || "";
+  }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: "include" });
 
-  if (res.status === 401) {
-    localStorage.removeItem("token");
-    localStorage.removeItem("role");
-    if (typeof window !== "undefined") window.location.href = "/login";
-    throw new Error("Session expired — please log in again.");
+  if (res.status === 401 && !_isRetry) {
+    try {
+      await refreshSession();
+      return apiFetch(path, options, true);
+    } catch {
+      if (typeof window !== "undefined") window.location.href = "/login";
+      throw new Error("Session expired — please log in again.");
+    }
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(text || `Request failed (${res.status})`);
   }
+  if (res.status === 204) return null;
   return res.json();
 }
 
+// ---------------------------------------------------------------- session
+
 export async function login(username, password) {
-  const body = new URLSearchParams();
-  body.append("username", username);
-  body.append("password", password);
-
-  const res = await fetch(`${API_BASE}/auth/login`, { method: "POST", body });
-  if (!res.ok) throw new Error("Invalid username or password.");
-
-  const data = await res.json();
-  localStorage.setItem("token", data.access_token);
-  localStorage.setItem("role", data.role);
-  localStorage.setItem("username", username);
-  return data;
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    if (res.status === 429) throw new Error("Too many failed attempts. Try again in a few minutes.");
+    throw new Error("Invalid username or password.");
+  }
+  return res.json(); // UserOut
 }
 
-export function logout() {
-  localStorage.removeItem("token");
-  localStorage.removeItem("role");
-  localStorage.removeItem("username");
+export async function logoutUser() {
+  try {
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "X-CSRF-Token": getCsrfToken() || "" },
+    });
+  } catch {
+    // best-effort — the client-side session state gets cleared regardless
+  }
 }
 
-export function isAuthenticated() {
-  return !!getToken();
+export function getMe() {
+  return apiFetch("/auth/me");
 }
 
-export function getRole() {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("role");
+export function changePassword(currentPassword, newPassword) {
+  return apiFetch("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
 }
 
-export function getUsername() {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("username");
+// ------------------------------------------------------- admin: user mgmt
+
+export function listUsers() {
+  return apiFetch("/auth/users");
 }
 
-// WebSocket can't send an Authorization header from a browser, so the token
-// travels as a query param instead (validated server-side in /ws/alerts).
+export function createUser({ username, email, role }) {
+  return apiFetch("/auth/users", {
+    method: "POST",
+    body: JSON.stringify({ username, email: email || null, role }),
+  });
+}
+
+export function updateUser(userId, { role, is_active } = {}) {
+  const payload = {};
+  if (role !== undefined) payload.role = role;
+  if (is_active !== undefined) payload.is_active = is_active;
+  return apiFetch(`/auth/users/${userId}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export function resetUserPassword(userId) {
+  return apiFetch(`/auth/users/${userId}/reset-password`, { method: "POST" });
+}
+
+// ------------------------------------------------------------- websocket
+// Browsers attach cookies to a WebSocket handshake the same way they do to
+// a normal request, so the access_token cookie rides along automatically —
+// no token in the URL (and therefore no token in server logs/browser
+// history) unlike the old ?token= query param.
 export function buildAlertsSocketUrl() {
-  const token = getToken();
   const wsBase = API_BASE.replace(/^http/, "ws");
-  return `${wsBase}/ws/alerts?token=${encodeURIComponent(token || "")}`;
+  return `${wsBase}/ws/alerts`;
 }
+
+// -------------------------------------------------------------- fraud API
 
 export function scoreTransaction(payload) {
   return apiFetch("/score", { method: "POST", body: JSON.stringify(payload) });
@@ -87,10 +157,10 @@ export function getStats() {
   return apiFetch("/api/fraud/stats");
 }
 
-export function acknowledgeAlert(alertId, ackedBy, isFalsePositive) {
+export function acknowledgeAlert(alertId, isFalsePositive) {
   return apiFetch(`/api/fraud/alerts/${alertId}/acknowledge`, {
     method: "POST",
-    body: JSON.stringify({ acknowledged_by: ackedBy, is_false_positive: isFalsePositive }),
+    body: JSON.stringify({ is_false_positive: isFalsePositive }),
   });
 }
 

@@ -1,13 +1,53 @@
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+Role = Literal["ADMIN", "ANALYST"]
 
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    role: str
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class UserOut(BaseModel):
+    id: int
+    username: str
+    email: Optional[str] = None
+    role: Role
+    is_active: bool
+    must_change_password: bool
+    created_at: datetime
+    last_login_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UserCreate(BaseModel):
+    username: str = Field(min_length=3, max_length=50)
+    email: Optional[str] = None
+    role: Role
+
+
+class UserCreateOut(BaseModel):
+    user: UserOut
+    temp_password: str
+
+
+class UserUpdate(BaseModel):
+    role: Optional[Role] = None
+    is_active: Optional[bool] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
+class ResetPasswordResponse(BaseModel):
+    temp_password: str
 
 
 class TransactionFeatures(BaseModel):
@@ -80,5 +120,7 @@ class StatsOut(BaseModel):
 
 
 class AcknowledgeAlertRequest(BaseModel):
-    acknowledged_by: str
+    # acknowledged_by is intentionally NOT here — it's derived server-side
+    # from the authenticated user (see main.py's acknowledge_alert), not
+    # trusted from the client.
     is_false_positive: bool = False

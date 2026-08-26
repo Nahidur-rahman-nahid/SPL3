@@ -43,9 +43,35 @@ project root for the other two — see below) into `backend/model/`:
 uvicorn main:app --reload
 ```
 
-Open **http://127.0.0.1:8000/docs** — interactive Swagger UI. Log in via
-`/auth/login`, click "Authorize" with the returned token, then you can test
-every endpoint from the browser without curl.
+On first run, a bootstrap admin account is created automatically from
+`BOOTSTRAP_ADMIN_USERNAME`/`BOOTSTRAP_ADMIN_PASSWORD` in `.env` (only if the
+`users` table is empty). Every other account is created afterwards through
+that admin's account — see "Auth" below.
+
+Open **http://127.0.0.1:8000/docs** for interactive testing. Auth is
+cookie-based now (not a bearer token), so Swagger's "Authorize" button
+doesn't apply the same way — either drive it from the frontend (which sends
+cookies automatically), or use curl with a cookie jar (see Smoke test).
+
+## Auth
+
+No public signup — accounts are created by an existing ADMIN via
+`POST /auth/users`, which returns a one-time temp password
+(`must_change_password` is set on the new account, forcing a change at first
+login via `POST /auth/change-password`). `POST /auth/login` sets three
+cookies: `access_token` (short-lived, httpOnly), `refresh_token`
+(long-lived, httpOnly, rotated on every use via `POST /auth/refresh`), and
+`csrf_token` (**not** httpOnly — read it client-side and echo it back as an
+`X-CSRF-Token` header on every mutating request; see `auth.py`'s docstring
+for why). `GET /auth/me` returns the current session's user profile.
+
+Local dev (`http://localhost:3000` talking to `http://localhost:8000`) works
+with the default `COOKIE_SECURE=False`/`COOKIE_SAMESITE=lax` because both are
+"localhost" — cookie scoping ignores port. A real deployment with
+frontend/backend on different domains needs `COOKIE_SECURE=True`,
+`COOKIE_SAMESITE=none`, and `CORS_ORIGINS` set to the real frontend origin —
+see `.env.example` for details and caveats (Safari/Chrome third-party-cookie
+restrictions).
 
 ## Feature scaling — now handled automatically
 
@@ -58,12 +84,20 @@ by callers (Kafka producer, curl, whatever).
 
 ## Smoke test
 
-```bash
-curl -X POST http://127.0.0.1:8000/auth/login -d "username=admin&password=admin123"
-# copy access_token from the response
+Cookie-based auth needs a cookie jar, and mutating endpoints need the CSRF
+header echoed back:
 
-curl -X POST http://127.0.0.1:8000/score \
-  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+```bash
+curl -c cookies.txt -X POST http://127.0.0.1:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "<your BOOTSTRAP_ADMIN_PASSWORD>"}'
+
+CSRF=$(grep csrf_token cookies.txt | awk '{print $7}')
+
+curl -b cookies.txt http://127.0.0.1:8000/auth/me
+
+curl -b cookies.txt -X POST http://127.0.0.1:8000/score \
+  -H "Content-Type: application/json" -H "X-CSRF-Token: $CSRF" \
   -d '{
     "transaction_id": "t1", "sender_account": "A1", "receiver_account": "A2",
     "features": {"step": 5, "type": "TRANSFER", "amount": 181000.0,
@@ -72,19 +106,22 @@ curl -X POST http://127.0.0.1:8000/score \
     "neighbours": []
   }'
 
-curl http://127.0.0.1:8000/api/fraud/results -H "Authorization: Bearer <token>"
-curl http://127.0.0.1:8000/api/fraud/stats -H "Authorization: Bearer <token>"
+curl -b cookies.txt http://127.0.0.1:8000/api/fraud/results
+curl -b cookies.txt http://127.0.0.1:8000/api/fraud/stats
 ```
 
 ## What's built vs. what's next
 
-Built: JWT auth (ADMIN/ANALYST), `/score` (real-time inference via
-`use_batch=False`, with automatic raw-feature scaling and Redis-backed
-neighbour lookup — merged with any client-supplied `neighbours`),
-PostgreSQL persistence, results/stats endpoints, alert acknowledgement
-(now broadcast live), and a native WebSocket endpoint (`/ws/alerts`) that
-pushes every new decision and every acknowledgement to connected clients
-in real time.
+Built: DB-backed accounts (ADMIN/ANALYST) with cookie sessions, refresh-token
+rotation with reuse/theft detection, admin-only user management (create,
+deactivate, change role, reset password — no public signup, no email —
+see "Auth" above), RBAC on admin-only endpoints, `/score` (real-time
+inference via `use_batch=False`, with automatic raw-feature scaling and
+Redis-backed neighbour lookup — merged with any client-supplied
+`neighbours`), PostgreSQL persistence, results/stats endpoints, alert
+acknowledgement (now broadcast live, attributed to the authenticated user),
+and a native WebSocket endpoint (`/ws/alerts`) that pushes every new
+decision and every acknowledgement to connected clients in real time.
 
 Not yet wired: Kafka consumer (transactions currently arrive via direct
 `/score` calls, not a stream), IEEE-CIS generalisation, the money-flow /
