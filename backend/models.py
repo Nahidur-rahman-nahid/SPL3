@@ -26,6 +26,41 @@ def utcnow():
     return datetime.now(timezone.utc)
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String, nullable=False, unique=True, index=True)
+    email = Column(String, nullable=True)
+    hashed_password = Column(String, nullable=False)
+    role = Column(String, nullable=False)  # ADMIN, ANALYST — validated in schemas.py
+    is_active = Column(Boolean, nullable=False, default=True)
+    # Forces a password change on next login — set on account creation and on
+    # any admin-issued password reset, since both hand the user a temp
+    # password an admin has seen.
+    must_change_password = Column(Boolean, nullable=False, default=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    last_login_at = Column(DateTime, nullable=True)
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # Hash of the refresh token, never the raw value — same principle as
+    # password storage. Looked up by hashing the presented token.
+    token_hash = Column(String, nullable=False, unique=True, index=True)
+    # Every token descended from one login shares a family_id. Reuse
+    # detection (a revoked/expired token presented again = theft signal)
+    # bulk-revokes the whole family instead of walking a replacement chain.
+    family_id = Column(String, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
 

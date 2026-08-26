@@ -6,6 +6,10 @@ redis
 joblib
 python-jose[cryptography]
 passlib[bcrypt]
+# passlib 1.7.4's bcrypt backend detection reads bcrypt.__about__.__version__,
+# which bcrypt>=4.1 removed — harmless but logs an AttributeError on every
+# hash/verify call. Pin below that until passlib publishes a fix.
+bcrypt<4.1
 python-multipart
 pydantic-settings
 torch

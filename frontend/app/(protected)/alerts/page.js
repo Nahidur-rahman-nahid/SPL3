@@ -1,31 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getRole, isAuthenticated, logout } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import AlertQueue from "@/components/AlertQueue";
 
 export default function AlertsPage() {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
-  const [role, setRole] = useState("");
+  const { role, logout } = useAuth();
 
-  useEffect(() => {
-    if (!isAuthenticated()) {
-      router.replace("/login");
-      return;
-    }
-    setRole(getRole() || "");
-    setReady(true);
-  }, [router]);
-
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    await logout();
     router.replace("/login");
   }
-
-  if (!ready) return null;
 
   return (
     <div className="min-h-screen flex-1 bg-slate-950 text-slate-100">

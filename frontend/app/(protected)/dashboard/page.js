@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getRole, getStats, isAuthenticated, logout } from "@/lib/api";
+import { getStats } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import StatsPanel from "@/components/StatsPanel";
 import ScoreForm from "@/components/ScoreForm";
 import LiveFeed from "@/components/LiveFeed";
@@ -15,40 +16,27 @@ const STATS_FALLBACK_POLL_MS = 15000;
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
-  const [role, setRole] = useState("");
+  const { user, role, logout } = useAuth();
   const [stats, setStats] = useState(null);
-
-  useEffect(() => {
-    if (!isAuthenticated()) {
-      router.replace("/login");
-      return;
-    }
-    setRole(getRole() || "");
-    setReady(true);
-  }, [router]);
 
   const loadStats = useCallback(async () => {
     try {
       setStats(await getStats());
     } catch {
-      // apiFetch already redirects to /login on 401; other errors just retry next tick
+      // apiFetch already redirects to /login on repeated 401s; other errors just retry next tick
     }
   }, []);
 
   useEffect(() => {
-    if (!ready) return;
     loadStats();
     const interval = setInterval(loadStats, STATS_FALLBACK_POLL_MS);
     return () => clearInterval(interval);
-  }, [ready, loadStats]);
+  }, [loadStats]);
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    await logout();
     router.replace("/login");
   }
-
-  if (!ready) return null;
 
   return (
     <div className="min-h-screen flex-1 bg-slate-950 text-slate-100">
@@ -63,6 +51,14 @@ export default function DashboardPage() {
           </Link>
           <Link href="/stream" className="text-sm text-slate-400 hover:text-white transition-colors">
             Live Stream Monitor →
+          </Link>
+          {role === "ADMIN" && (
+            <Link href="/admin/users" className="text-sm text-slate-400 hover:text-white transition-colors">
+              Manage Users →
+            </Link>
+          )}
+          <Link href="/account" className="text-sm text-slate-400 hover:text-white transition-colors">
+            {user?.username}
           </Link>
           {role && <span className="text-xs px-2 py-1 rounded bg-slate-800 text-slate-300">{role}</span>}
           <button onClick={handleLogout} className="text-sm text-slate-400 hover:text-white transition-colors">
