@@ -310,17 +310,23 @@ def get_results(
 
 @app.get("/api/fraud/stats", response_model=schemas.StatsOut)
 def get_stats(db: Session = Depends(get_db), _user: models.User = Depends(get_current_user)):
-    total = db.query(func.count(models.FraudDecision.decision_id)).scalar() or 0
-    allow_count = db.query(func.count()).filter(models.FraudDecision.decision == "ALLOW").scalar() or 0
-    review_count = db.query(func.count()).filter(models.FraudDecision.decision == "REVIEW").scalar() or 0
-    block_count = db.query(func.count()).filter(models.FraudDecision.decision == "BLOCK").scalar() or 0
-    avg_latency = db.query(func.avg(models.FraudDecision.inference_latency_ms)).scalar()
+    # Single round-trip: all counts + avg in one query, each count pinned to
+    # an explicit column so SQLAlchemy always has a FROM clause to work with.
+    row = db.query(
+        func.count(models.FraudDecision.decision_id),
+        func.count(models.FraudDecision.decision_id).filter(models.FraudDecision.decision == "ALLOW"),
+        func.count(models.FraudDecision.decision_id).filter(models.FraudDecision.decision == "REVIEW"),
+        func.count(models.FraudDecision.decision_id).filter(models.FraudDecision.decision == "BLOCK"),
+        func.avg(models.FraudDecision.inference_latency_ms),
+    ).one()
+    total, allow_count, review_count, block_count, avg_latency = row
+    total = total or 0
 
     return schemas.StatsOut(
         total_scored=total,
-        allow_count=allow_count,
-        review_count=review_count,
-        block_count=block_count,
+        allow_count=allow_count or 0,
+        review_count=review_count or 0,
+        block_count=block_count or 0,
         fraud_rate_estimate=(block_count / total) if total else None,
         avg_inference_latency_ms=float(avg_latency) if avg_latency is not None else None,
     )
