@@ -83,6 +83,26 @@ class Settings(BaseSettings):
     # touching the tiering thresholds themselves.
     ALERT_THRESHOLD: float = 0.40
 
+    # Night-time high-value transfer rule (decision_engine.apply_night_rule):
+    # a high-value transaction during these local hours is raised to at
+    # least REVIEW regardless of the GNN score. Hours are evaluated in
+    # Bangladesh time (UTC+6, no DST). Applies to POST /score only — the
+    # stream simulator skips it so the live demo feed is unaffected.
+    NIGHT_RULE_ENABLED: bool = True
+    NIGHT_RULE_HOURS: str = "23,0,1,2,3"
+    NIGHT_RULE_MIN_AMOUNT: float = 10_000
+    LOCAL_UTC_OFFSET_HOURS: int = 6
+
+    # Bangladesh Bank daily MFS limits (scoring_pipeline.check_regulatory_limits).
+    # A POST /score transaction that would push the sender's same-type total
+    # for the current Bangladesh calendar day past its limit is hard-BLOCKed
+    # with risk_level="REGULATORY". TRANSFER stands in for BB's "P2P send
+    # money" limit. Totals live in Redis (redis_client.reserve_daily_amount);
+    # fails open if Redis is down. The stream simulator skips this check.
+    REGULATORY_LIMITS_ENABLED: bool = True
+    DAILY_LIMIT_CASH_OUT: float = 30_000
+    DAILY_LIMIT_TRANSFER: float = 50_000
+
     # escalation.py: an unacknowledged alert older than this gets flagged
     # "escalated" and re-broadcast so it stands out in the UI. Stands in
     # for a real paging/email SLA timer — see escalation.py's docstring.
@@ -92,6 +112,14 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def night_rule_hours_set(self) -> set[int]:
+        return {int(h.strip()) for h in self.NIGHT_RULE_HOURS.split(",") if h.strip()}
+
+    @property
+    def daily_limits(self) -> dict[str, float]:
+        return {"CASH_OUT": self.DAILY_LIMIT_CASH_OUT, "TRANSFER": self.DAILY_LIMIT_TRANSFER}
 
     class Config:
         env_file = ".env"

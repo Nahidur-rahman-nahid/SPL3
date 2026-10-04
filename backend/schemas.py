@@ -77,6 +77,10 @@ class ScoreRequest(BaseModel):
     # that account). Real neighbours are also looked up from Redis by
     # sender_account/receiver_account and merged in — see main.py's /score.
     neighbours: List[TransactionFeatures] = []
+    # When the transaction actually happened, used by time-of-day rules
+    # (decision_engine.apply_night_rule). Omitted = "now". A naive datetime
+    # is treated as Bangladesh local time.
+    transaction_time: Optional[datetime] = None
 
 
 class ScoreResponse(BaseModel):
@@ -87,6 +91,10 @@ class ScoreResponse(BaseModel):
     explanation: dict
     neighbour_count: int
     inference_latency_ms: int
+    # Sender's Bangladesh Bank daily limit usage for this transaction's type
+    # ({type, period, used, limit, remaining}); None when the check didn't
+    # run (disabled, stream source, or Redis unavailable).
+    limit_usage: Optional[dict] = None
 
 
 class FraudResultOut(BaseModel):

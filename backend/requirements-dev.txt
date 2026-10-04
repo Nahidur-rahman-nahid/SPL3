@@ -1,0 +1,5 @@
+# Test-only dependencies: pip install -r requirements-dev.txt, then python -m pytest tests
+-r requirements.txt
+pytest
+fakeredis
+httpx

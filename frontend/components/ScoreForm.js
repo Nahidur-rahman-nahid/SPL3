@@ -203,6 +203,12 @@ export default function ScoreForm({ onScored }) {
             </div>
           </div>
           <p className="text-sm mt-2 opacity-90">{result.explanation?.summary}</p>
+          {result.limit_usage && (
+            <p className="text-xs mt-2 opacity-80">
+              Daily {result.limit_usage.type} limit: BDT {result.limit_usage.used.toLocaleString()} of BDT{" "}
+              {result.limit_usage.limit.toLocaleString()} used · BDT {result.limit_usage.remaining.toLocaleString()} remaining
+            </p>
+          )}
 
           <div className="mt-4 pt-4 border-t border-white/10">
             <SubgraphViz

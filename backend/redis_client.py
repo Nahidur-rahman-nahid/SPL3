@@ -13,6 +13,8 @@ result instead of raising.
 
 import json
 import logging
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 import redis
 
@@ -59,3 +61,66 @@ def store_transaction(transaction_id: str, sender_account: str, receiver_account
         pipe.execute()
     except redis.RedisError as e:
         logger.warning("Redis store failed for transaction %s: %s", transaction_id, e)
+
+
+# ---------------------------------------------------------------- daily limits
+#
+# Per-account, per-type running totals for the current Bangladesh calendar
+# day, keyed "daily:{account_id}:{TYPE}:{YYYYMMDD}". The date in the key is
+# what resets the total at local midnight; the TTL only cleans up old keys,
+# so it just has to outlive its day. Same fail-open policy as above: every
+# function returns None on a Redis error so the caller can skip the check.
+
+DAILY_TTL_SECONDS = 2 * 86400
+
+
+def _local_date(when: Optional[datetime] = None) -> str:
+    local_tz = timezone(timedelta(hours=settings.LOCAL_UTC_OFFSET_HOURS))
+    when = when or datetime.now(timezone.utc)
+    return when.astimezone(local_tz).strftime("%Y%m%d")
+
+
+def _daily_key(account_id: str, txn_type: str, when: Optional[datetime] = None) -> str:
+    return f"daily:{account_id}:{txn_type}:{_local_date(when)}"
+
+
+def get_daily_total(account_id: str, txn_type: str, when: Optional[datetime] = None) -> Optional[float]:
+    try:
+        raw = get_client().get(_daily_key(account_id, txn_type, when))
+        return round(float(raw), 2) if raw is not None else 0.0
+    except redis.RedisError as e:
+        logger.warning("Daily total lookup failed for %s: %s", account_id, e)
+        return None
+
+
+def reserve_daily_amount(
+    account_id: str, txn_type: str, amount: float, limit: float, when: Optional[datetime] = None
+) -> Optional[tuple]:
+    """Adds `amount` to today's total and keeps it only if the new total
+    stays within `limit`. Add-then-check (rather than read-then-add) means
+    two concurrent requests can't both pass on the same remaining headroom.
+    Returns (accepted, total_after) — total_after excludes `amount` when
+    rejected — or None if Redis is unavailable."""
+    key = _daily_key(account_id, txn_type, when)
+    try:
+        client = get_client()
+        pipe = client.pipeline()
+        pipe.incrbyfloat(key, amount)
+        pipe.expire(key, DAILY_TTL_SECONDS)
+        new_total = round(float(pipe.execute()[0]), 2)
+        if new_total > limit:
+            client.incrbyfloat(key, -amount)
+            return False, round(new_total - amount, 2)
+        return True, new_total
+    except redis.RedisError as e:
+        logger.warning("Daily total reserve failed for %s: %s", account_id, e)
+        return None
+
+
+def release_daily_amount(account_id: str, txn_type: str, amount: float, when: Optional[datetime] = None) -> None:
+    """Undoes a reserve_daily_amount() — used when the transaction ends up
+    BLOCKed (or scoring fails), so blocked money doesn't eat into the limit."""
+    try:
+        get_client().incrbyfloat(_daily_key(account_id, txn_type, when), -amount)
+    except redis.RedisError as e:
+        logger.warning("Daily total release failed for %s: %s", account_id, e)

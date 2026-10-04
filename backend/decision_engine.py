@@ -14,6 +14,8 @@ inference). This module owns:
   - should_alert()   — a threshold independent of the tiering thresholds
     above, so alerting policy (who lands in the review queue) can diverge
     from and be tuned separately from decision tiering.
+  - apply_night_rule() — rule-based override on top of the model: a
+    high-value transaction late at night is held for REVIEW.
 
 Deliberately a separate module from ml_service.py: swap the model
 checkpoint and this file doesn't change; retune alerting policy and
@@ -21,6 +23,8 @@ ml_service.py doesn't change.
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -55,6 +59,52 @@ def tier_decision(probability: float) -> tuple:
 
 def should_alert(probability: float) -> bool:
     return probability >= settings.ALERT_THRESHOLD
+
+
+def _local_hour(transaction_time: Optional[datetime]) -> int:
+    local_tz = timezone(timedelta(hours=settings.LOCAL_UTC_OFFSET_HOURS))
+    if transaction_time is None:
+        return datetime.now(local_tz).hour
+    if transaction_time.tzinfo is None:
+        return transaction_time.hour  # naive = already local time
+    return transaction_time.astimezone(local_tz).hour
+
+
+def apply_night_rule(request: ScoreRequest, decision: str, risk_level: str) -> tuple:
+    """MFS-specific rule: a high-value transaction late at night is held
+    for REVIEW regardless of the GNN score. Only ever raises ALLOW to
+    REVIEW — never downgrades a REVIEW/BLOCK the model already produced.
+    Returns (decision, risk_level, rule_info), rule_info None if the rule
+    didn't fire."""
+    if not settings.NIGHT_RULE_ENABLED:
+        return decision, risk_level, None
+
+    hour = _local_hour(request.transaction_time)
+    amount = request.features.amount
+    if hour not in settings.night_rule_hours_set or amount <= settings.NIGHT_RULE_MIN_AMOUNT:
+        return decision, risk_level, None
+
+    changed = decision == "ALLOW"
+    rule_info = {
+        "rule": "NIGHT_HIGH_VALUE",
+        "local_hour": hour,
+        "amount": amount,
+        "min_amount": settings.NIGHT_RULE_MIN_AMOUNT,
+        "changed_decision": changed,
+    }
+    if changed:
+        return "REVIEW", "MEDIUM", rule_info
+    return decision, risk_level, rule_info
+
+
+def attach_rule_to_explanation(explanation: dict, rule_info: dict) -> None:
+    explanation.setdefault("rules_triggered", []).append(rule_info)
+    if rule_info["changed_decision"]:
+        note = (
+            f"Held for REVIEW by night-time rule: BDT {rule_info['amount']:,.0f} "
+            f"at {rule_info['local_hour']:02d}:00 local time exceeds BDT {rule_info['min_amount']:,.0f}."
+        )
+        explanation["summary"] = f"{note} {explanation.get('summary', '')}".strip()
 
 
 def _prior_decisions(db: Session, transaction_ids: list) -> dict:
