@@ -5,8 +5,7 @@ A fraud detection system built around a fused bi-level Graph Neural Network
 GraphSAGE), trained on PaySim and served through a real-time FastAPI
 backend + Next.js dashboard.
 
-Full architecture, database schema, ER diagram, and design decisions (why
-PaySim first, why FastAPI-only, why PostgreSQL over NoSQL, etc.) live in
+Full architecture, database schema, ER diagram, and design decisions  live in
 **[architecture.md](architecture.md)** — that's the source of truth for
 this project.
 
