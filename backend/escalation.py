@@ -49,31 +49,46 @@ async def run_escalation_watch():
     )
     while True:
         await asyncio.sleep(settings.ALERT_ESCALATION_CHECK_SECONDS)
-        db = SessionLocal()
-        try:
-            now = datetime.now(timezone.utc)
-            sla = timedelta(minutes=settings.ALERT_SLA_MINUTES)
-            candidates = (
-                db.query(models.Alert)
-                .filter(models.Alert.acknowledged_at.is_(None), models.Alert.escalated.is_(False))
-                .all()
-            )
-            overdue = [a for a in candidates if _is_overdue(a, now, sla)]
 
-            for alert in overdue:
-                alert.escalated = True
-                alert.escalated_at = now
-                notify_escalation(alert)
-            if overdue:
-                db.commit()
+        # Retry up to 3 times to handle Neon serverless cold-start latency.
+        last_error = None
+        for attempt in range(3):
+            db = SessionLocal()
+            try:
+                now = datetime.now(timezone.utc)
+                sla = timedelta(minutes=settings.ALERT_SLA_MINUTES)
+                candidates = (
+                    db.query(models.Alert)
+                    .filter(models.Alert.acknowledged_at.is_(None), models.Alert.escalated.is_(False))
+                    .all()
+                )
+                overdue = [a for a in candidates if _is_overdue(a, now, sla)]
+
                 for alert in overdue:
-                    await manager.broadcast({
-                        "type": "alert_escalated",
-                        "alert_id": alert.alert_id,
-                        "decision_id": alert.decision_id,
-                        "escalated_at": alert.escalated_at.isoformat(),
-                    })
-        except Exception as e:
-            logger.warning("Escalation watch skipped a cycle due to an error: %s", e)
-        finally:
-            db.close()
+                    alert.escalated = True
+                    alert.escalated_at = now
+                    notify_escalation(alert)
+                if overdue:
+                    db.commit()
+                    for alert in overdue:
+                        await manager.broadcast({
+                            "type": "alert_escalated",
+                            "alert_id": alert.alert_id,
+                            "decision_id": alert.decision_id,
+                            "escalated_at": alert.escalated_at.isoformat(),
+                        })
+                last_error = None
+                break  # success — exit retry loop
+            except Exception as e:
+                last_error = e
+                logger.debug(
+                    "Escalation DB attempt %d/3 failed: %s — retrying in 3s…", attempt + 1, e
+                )
+            finally:
+                db.close()
+
+            if attempt < 2:
+                await asyncio.sleep(3)  # brief backoff before retry
+
+        if last_error is not None:
+            logger.warning("Escalation watch skipped a cycle after 3 attempts: %s", last_error)
