@@ -1,6 +1,9 @@
 # Raw dataset + built graph — hundreds of MB, exceeds GitHub's 100MB file
 # limit outright. These live in Google Drive (see architecture.md), not git.
 the_files_with(.pt)/
+# Local copy of PaySim + the pattern-injected version and its manifest
+# (00_inject_fraud_patterns.py regenerates both deterministically).
+Dataset/
 
 # Generated training artifacts (regenerable by re-running the scripts;
 # keeping git from filling up with re-run output every time)

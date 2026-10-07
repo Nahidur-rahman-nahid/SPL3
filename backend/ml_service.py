@@ -14,6 +14,8 @@ policy, and retuning alerting policy never touches inference.
 import time
 
 import joblib
+import numpy as np
+import pandas as pd
 import torch
 
 from config import settings
@@ -27,11 +29,15 @@ _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 _model = None
 _type_encoder = None
 _scaler = None
+# How amount/balances were transformed before the scaler during training,
+# read from the checkpoint: None (older models) or "log1p".
+_money_transform = None
+_model_info = {}
 _tiers = {"low_max": settings.LOW_MAX, "review_max": settings.REVIEW_MAX, "high_max": settings.HIGH_MAX}
 
 
 def load_model():
-    global _model, _tiers, _type_encoder, _scaler
+    global _model, _tiers, _type_encoder, _scaler, _money_transform, _model_info
 
     checkpoint = torch.load(settings.MODEL_PATH, map_location=_device, weights_only=False)
     _model = FraudGNN(
@@ -42,11 +48,23 @@ def load_model():
     _model.load_state_dict(checkpoint["state_dict"])
     _model.eval()
     _tiers = checkpoint.get("tiers", _tiers)
+    _money_transform = checkpoint.get("money_transform")
+    _model_info = {
+        "trained_on": checkpoint.get("trained_on", "PaySim"),
+        "money_transform": _money_transform,
+        "best_val_pr_auc": checkpoint.get("best_val_pr_auc"),
+    }
 
     _type_encoder = joblib.load(settings.TYPE_ENCODER_PATH)
     _scaler = joblib.load(settings.SCALER_PATH)
 
     return _model
+
+
+def model_info() -> dict:
+    """What the loaded checkpoint was trained on — shown on the Fraud
+    Patterns page so a demo makes clear which model produced the scores."""
+    return dict(_model_info)
 
 
 def current_tiers() -> dict:
@@ -61,8 +79,12 @@ def _features_to_vector(features: TransactionFeatures) -> list:
     inputs on the identical scale the model was trained on."""
     type_encoded = float(_type_encoder.transform([features.type])[0])
 
-    raw_scale_values = [[getattr(features, col) for col in SCALE_COLS]]
-    scaled = _scaler.transform(raw_scale_values)[0]
+    raw_scale_values = np.array([[getattr(features, col) for col in SCALE_COLS]], dtype=float)
+    if _money_transform == "log1p":
+        raw_scale_values = np.log1p(np.clip(raw_scale_values, 0, None))
+    # The scaler was fit on a DataFrame; pass the same column names so
+    # sklearn doesn't warn "X does not have valid feature names" per call.
+    scaled = _scaler.transform(pd.DataFrame(raw_scale_values, columns=SCALE_COLS))[0]
     amount_s, old_orig_s, new_orig_s, old_dest_s, new_dest_s = scaled
 
     # Order must match FEATURE_COLS from 03_graph_builder.py / training.

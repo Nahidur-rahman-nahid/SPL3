@@ -86,7 +86,16 @@ class GraphBuilder:
         x = torch.tensor(df[feature_cols].values, dtype=torch.float)
         y = torch.tensor(df[label_col].values, dtype=torch.long)
 
-        return Data(x=x, edge_index=edge_index, y=y)
+        data = Data(x=x, edge_index=edge_index, y=y)
+        # Injected-pattern instances held out for evaluation (01_load_paysim.py
+        # tags them); train_main_gnn.py keeps these nodes in the test split only.
+        if "holdout" in df.columns:
+            data.holdout = torch.tensor(df["holdout"].values.astype(bool), dtype=torch.bool)
+        # Injected rows (any pattern): their legit ones are hard negatives that
+        # train_main_gnn.py weights like fraud.
+        if "pattern" in df.columns:
+            data.injected = torch.tensor((df["pattern"] != "").values, dtype=torch.bool)
+        return data
 
 
 def main():
@@ -99,6 +108,8 @@ def main():
     print(data)
     print(f"Nodes: {data.num_nodes}, Edges: {data.num_edges}")
     print(f"Fraud nodes: {int(data.y.sum())} / {data.num_nodes}")
+    if hasattr(data, "holdout"):
+        print(f"Holdout (injected, test-only) nodes: {int(data.holdout.sum())}")
 
     torch.save(data, "paysim_graph.pt")
     print("Saved graph to paysim_graph.pt")
