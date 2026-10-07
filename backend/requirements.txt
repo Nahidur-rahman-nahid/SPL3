@@ -19,3 +19,8 @@ torch_geometric
 # reorg in 2.0) — pin the floor so a fresh install doesn't hit that crash.
 numpy>=2.0
 pandas>=2.2
+# model/scaler.pkl + type_encoder.pkl are pickled sklearn objects — loading
+# them under a different sklearn version than they were saved with logs an
+# InconsistentVersionWarning (and can break on a big enough jump). Keep this
+# pin equal to the version the .pkl files were last saved with.
+scikit-learn==1.9.0
