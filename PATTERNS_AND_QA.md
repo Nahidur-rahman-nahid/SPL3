@@ -9,44 +9,42 @@ not just logistic regression / XGBoost."
 
 ## 1. How the demo/synthetic transactions are constructed
 
-Both `ScoreForm.js`'s presets and `stream_simulator.py`'s background
-generator build transactions along the same three shapes, deliberately
-mirroring PaySim's own structure:
+**Live stream (`stream_simulator.py`).** Every 2 seconds one transaction is
+generated. Balances carry over from one transaction to the next, like a real
+ledger, and transactions close in time share the same `step` (hour).
 
-**Normal payment**
-```
-amount            = random(500, 15,000)
-oldbalanceOrg     = amount + random(5,000, 30,000)   -- healthy buffer beyond the payment
-newbalanceOrig    = oldbalanceOrg - amount             -- partial draw, balance survives
-type              = random(TRANSFER, CASH_OUT)
-sender/receiver   = a small pool of recurring customer/merchant accounts
-```
-Balance stays healthy after the transaction — the account is not being emptied.
+| Share | What happens | Accounts |
+|---|---|---|
+| 85% everyday | shop payment (≤ 10% of balance), money for the customer's own relative (≤ 15%), or a cash-out at an agent (5–30%) | 60 recurring customers, 12 established shops, 20 relatives, 6 agents |
+| 11% drain | a victim's whole balance moves into a mule; 4–8 victims share each mule | fresh victim and mule accounts |
+| 4% structuring | one sender sends the same receiver 3–5 transfers of BDT 45,000–49,999 on consecutive ticks | fresh accounts |
 
-**Suspicious drain-to-mule**
-```
-amount            = random(80,000, 250,000)
-oldbalanceOrg     = amount        -- the ENTIRE balance
-newbalanceOrig    = 0             -- account emptied to zero
-oldbalanceDest    = 0
-newbalanceDest    = amount
-type              = TRANSFER
-sender/receiver   = a victim account -> a mule (personal C_ account, not a merchant M_ account)
-```
-This is PaySim's actual fraud signature: draining an account fully in one
-TRANSFER into a personal account. It's not an arbitrary "make it look bad"
-pattern — it's literally how PaySim's simulator generates its `isFraud=1`
-rows.
+Fraud always arrives as a group, the way the GNN learned it, so the first
+transaction of a group has no neighbours yet and usually passes; the rest
+are caught once the group is visible.
 
-**Ring / agent collusion**
-Same drain shape as above, but the *sender* is chosen from a pool of several
-different victim accounts, all paying into the *same* receiver (a shared
-mule). This is the account-level shape of a fraud ring — several unrelated
-parties converging on one account in a short window.
+**Score page presets (`ScoreForm.js`).**
+
+| Preset | Transaction | Supplied related transactions | Retrained model |
+|---|---|---|---|
+| Normal payment | 5,000 of a 25,000 balance to a merchant | none | 2.8% ALLOW |
+| Suspicious (structuring) | 47,500 from a 302,700 balance | 2 earlier near-limit transfers (48,200, 49,100) from the same sender to the same receiver | 0.1% alone → 63% REVIEW |
+| High-risk (mule hub) | a 47,000 account drained into a mule | 3 other victims drained into the same mule | 12.6% alone → 95% BLOCK |
+
+The fraud presets stay under the BDT 50,000 daily limit so the GNN's own
+decision is shown, not the regulatory block.
+
+**Fraud Patterns page (`pattern_demo.py`).** Replays the 6 injected fraud
+patterns and a look-alike for each, one transaction at a time; see
+`INJECTED_PATTERNS.md` for how the patterns were built and verified.
 
 ---
 
 ## 2. What patterns the model actually learned
+
+> This section describes the **first model, trained on PaySim only**. The
+> current model was retrained on PaySim plus injected graph patterns; what
+> it learned, and how that was verified, is in `INJECTED_PATTERNS.md` and §3.
 
 Two honest caveats before this section: (a) we have real measured feature
 importance for the **XGBoost baseline**, but no equivalent formal
@@ -87,34 +85,24 @@ model does not:**
 
 ---
 
-## 3. Expected risk tier by data pattern
+## 3. Expected risk tier by data pattern (retrained model)
 
-| Pattern | Example values | Design intent | Observed live behaviour |
-|---|---|---|---|
-| Normal payment | amount ≪ balance, balance survives | ALLOW / LOW | Matches consistently |
-| Drain-to-mule | full balance → 0, personal receiver | REVIEW or BLOCK | Often lands ALLOW/REVIEW in real-time mode — see limitation below |
-| Ring (multi-sender → one receiver) | several drain-pattern senders, same receiver | BLOCK / CRITICAL once ring detection exists | Not specifically detected yet — no dedicated ring logic built |
+| Pattern | Example | Result (real-time mode) |
+|---|---|---|
+| Everyday payment, alone or repeated | customer pays the same shop or relative several times, small share of balance | ALLOW (0.5–3%); 0 of 308 everyday stream transactions flagged |
+| Drain into a mule shared with other victims | full balance → mule that already received other drains | BLOCK (87–95%); 82% of stream drains blocked |
+| Structuring | 3–5 transfers just under 50,000, same sender and receiver | 89–91% from the second transfer on |
+| Smurf fan-out, agent collusion, account takeover, mule network | see `INJECTED_PATTERNS.md` | 89–95% once the group is visible; every look-alike ≤ 10% |
+| Any fraud transaction with no related transactions yet | first transaction of a group | usually ALLOW: there is nothing for the graph to see yet |
 
-### Known limitation: why many "suspicious" transactions still show ALLOW live
+**Overall test set (420,648 transactions, 0.67% fraud):** ROC-AUC 0.995,
+recall 89%, precision 44%, false positive rate 0.77%. The first PaySim-only
+model had recall 34% in real-time mode.
 
-This matches something we already measured during training, not a new bug.
-The live stream always runs in **real-time-only mode** (`use_batch=False` —
-no full offline graph, exactly like production). That mode's measured
-performance on the held-out test set was:
-
-```
-ROC-AUC: 0.956   Precision: 0.623   Recall: 0.336   FPR: 0.0006
-```
-
-Recall of 0.336 means roughly **two-thirds of genuinely fraud-shaped
-transactions do not cross the 0.75 BLOCK threshold** in real-time mode —
-even when the transaction has the classic drain-to-zero shape. This is the
-real, previously-quantified trade-off of the real-time-only pathway: very
-few false alarms (0.06% FPR), at the cost of missing a majority of subtle
-fraud cases. It is an honest limitation to state plainly rather than a
-demo malfunction — and it's a legitimate discussion point about threshold
-tuning being a business decision (lower the BLOCK threshold to catch more,
-at the cost of more false positives) rather than a fixed "correct" answer.
+Why precision is 44% even though the false positive rate is under 1%:
+legitimate transactions outnumber fraud about 150 to 1, so 0.77% of them
+(≈ 3,200) is more than the ≈ 2,500 frauds caught. Random flagging would
+give 0.67% precision; the CRITICAL tier alone is 61% fraud.
 
 ---
 
@@ -160,21 +148,26 @@ well tuned:*
   GNN's subgraph visualization shows the actual relational evidence behind
   one decision — a genuinely different, complementary kind of explanation.
 
-*Honest next step, not yet done:* the rigorous way to prove "the graph adds
-value beyond what the balance-drain shortcut already gives away" is the
-feature-ablation experiment already wired into `03_graph_builder.py` /
-`07_xgboost_baseline.py` (`REDUCED_FEATURE_COLS`, which drops the balance
-columns XGBoost leans on). That comparison hasn't been run yet — it's the
-real test of this claim, and it should be presented as pending, not as
-already-proven.
+*Measured proof that the graph adds something XGBoost cannot:* for five
+graph-only patterns, every fraud row has an exact copy (same amount, same
+balances) sent between unrelated accounts and labelled legit. Row by row the
+two are identical, so XGBoost scores them the same and separates them by
+0.00. The retrained GNN separates them by 0.80–1.00, because only the fraud
+copy has related transactions (`09_evaluate_patterns.py`, check D).
 
 **Q: So does the graph actually help, or is this all theoretical?**
 
-**A:** Within what we've measured so far: the fused GNN (0.970 AUC full,
-0.956 real-time-only) beats every plain single-pathway baseline we tried —
-standalone GCN (0.80–0.90 AUC) and standalone SAGE (0.86–0.90 AUC) — by a
-wide margin. So fusing the two pathways demonstrably helps *relative to
-graph-only alternatives*. It does not yet beat XGBoost's raw accuracy on
-*this* dataset, for the reason above. Both statements are true at once, and
-saying so directly is more credible than picking one and ignoring the
-other.
+**A:** It helps, and it is measured. In the first model, linking a
+transaction to known fraud *lowered* its score, because in plain PaySim the
+busiest accounts are legitimate. After retraining on injected graph patterns:
+- linking to the fraud group raises the score (structuring: 0.1% alone →
+  92% with its group; the old model went 49% → 23%);
+- the six fraud patterns are caught 98–100% on held-out data the model never
+  saw, versus 0–25% for the old model;
+- identical rows are told apart only by the graph (0.80–1.00 vs XGBoost 0.00);
+- plain PaySim fraud is still detected (real-time AUC 0.96 → 0.99).
+
+XGBoost still has the higher raw AUC on plain PaySim rows (0.999), because
+the balance-drain shortcut gives most PaySim fraud away row by row. Both
+statements are true at once: XGBoost is best at single-row fraud, the GNN is
+needed for fraud that only shows in the relationships.

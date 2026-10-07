@@ -17,31 +17,35 @@ const PRESETS = {
     },
     neighbours: [],
   },
+  // Both fraud presets are graph patterns: the transaction alone looks
+  // normal (retrained model: 0.1% and 12.6%), the supplied related
+  // transactions give it away (63% REVIEW, 95% BLOCK). Amounts stay under
+  // the BDT 50,000 daily limit so the GNN's decision is what shows.
   suspicious: {
-    label: "Suspicious Transfer (drain-to-mule)",
-    sender_account: "C_VICTIM_301",
-    receiver_account: "C_MULE_402",
+    label: "Suspicious (structuring: near-limit splits)",
+    sender_account: "C_SPLITTER_701",
+    receiver_account: "C_RECEIVER_702",
     features: {
-      step: 10, type: "TRANSFER", amount: 181000, oldbalanceOrg: 181000,
-      newbalanceOrig: 0, oldbalanceDest: 0, newbalanceDest: 181000,
-    },
-    // No supplied neighbour: the current checkpoint scores this drain
-    // pattern 56.8% (REVIEW) on its own but 30.9% (ALLOW) with the old
-    // dummy CASH_OUT attached — neighbours currently pull scores down.
-    neighbours: [],
-  },
-  highrisk: {
-    label: "High-Risk (agent collusion pattern)",
-    sender_account: "C_VICTIM_501",
-    receiver_account: "C_MULE_602",
-    features: {
-      step: 15, type: "TRANSFER", amount: 420000, oldbalanceOrg: 420000,
-      newbalanceOrig: 0, oldbalanceDest: 0, newbalanceDest: 420000,
+      step: 11, type: "TRANSFER", amount: 47500, oldbalanceOrg: 302700,
+      newbalanceOrig: 255200, oldbalanceDest: 187300, newbalanceDest: 234800,
     },
     neighbours: [
-      { step: 15, type: "CASH_OUT", amount: 200000, oldbalanceOrg: 200000, newbalanceOrig: 0, oldbalanceDest: 0, newbalanceDest: 200000 },
-      { step: 14, type: "TRANSFER", amount: 150000, oldbalanceOrg: 150000, newbalanceOrig: 0, oldbalanceDest: 0, newbalanceDest: 150000 },
-      { step: 15, type: "CASH_OUT", amount: 300000, oldbalanceOrg: 300000, newbalanceOrig: 0, oldbalanceDest: 0, newbalanceDest: 300000 },
+      { step: 10, type: "TRANSFER", amount: 48200, oldbalanceOrg: 400000, newbalanceOrig: 351800, oldbalanceDest: 90000, newbalanceDest: 138200 },
+      { step: 10, type: "TRANSFER", amount: 49100, oldbalanceOrg: 351800, newbalanceOrig: 302700, oldbalanceDest: 138200, newbalanceDest: 187300 },
+    ],
+  },
+  highrisk: {
+    label: "High-Risk (mule hub: victims drained into one account)",
+    sender_account: "C_VICTIM_801",
+    receiver_account: "C_MULE_802",
+    features: {
+      step: 15, type: "TRANSFER", amount: 47000, oldbalanceOrg: 47000,
+      newbalanceOrig: 0, oldbalanceDest: 125000, newbalanceDest: 172000,
+    },
+    neighbours: [
+      { step: 15, type: "TRANSFER", amount: 38000, oldbalanceOrg: 38000, newbalanceOrig: 0, oldbalanceDest: 0, newbalanceDest: 38000 },
+      { step: 15, type: "TRANSFER", amount: 45000, oldbalanceOrg: 45000, newbalanceOrig: 0, oldbalanceDest: 38000, newbalanceDest: 83000 },
+      { step: 15, type: "TRANSFER", amount: 42000, oldbalanceOrg: 42000, newbalanceOrig: 0, oldbalanceDest: 83000, newbalanceDest: 125000 },
     ],
   },
 };

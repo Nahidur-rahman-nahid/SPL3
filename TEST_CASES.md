@@ -250,7 +250,7 @@ Real SQLite database, fakeredis, fake model (fixed probability), so these tests 
 | PD-11 | Bad input | Unknown pattern `NOPE`; variant `other` | 404; 422 | Pass |
 | PD-12 | Login and CSRF required | No session | 401 for the list; 401/403 for a run | Pass |
 
-**Real-model check (2026-10-07, retrained model "PaySim + injected patterns"):** each fraud pattern's first transaction scores low (it has no neighbours yet); from the second one on, scores reach 65–98%. Every look-alike stays at 0–7%: Structuring 3/4 flagged vs 0/4, Mule network 11/12 vs 0/12.
+**Real-model check (2026-10-08, final retrained model "PaySim + injected patterns"):** each fraud pattern's first transaction scores low (it has no neighbours yet); from the second or third one on, scores reach 87–95% (Structuring 89–91%). Every look-alike stays at 0–10%: Structuring 3/4 flagged vs 0/4, Mule network 11/12 vs 0/12, Agent collusion 11/12 vs 0/12.
 
 ## Suite 8: Stream Simulator
 
@@ -264,7 +264,7 @@ Generator only (nothing is scored); the random seed is fixed.
 | SS-04 | Drains into shared mules | 12 drains | Every victim emptied and new; several victims per mule | Pass |
 | SS-05 | Everyday traffic | 1,000 generated | > 70% from the recurring customer pool; each customer always pays the same relative | Pass |
 
-**Real-model check (2026-10-07):** 400 stream transactions were scored with the retrained model. Everyday traffic: 300 of 303 allowed (1% flagged; the old simulator, with only 4 customers paying tiny shops over and over, had 44% flagged). Drains: 79% blocked. Structuring: 73% flagged (the first transfer of each burst has no neighbours yet).
+**Real-model check (2026-10-08):** 400 stream transactions were scored with the final retrained model. Everyday traffic: all 308 allowed (the old simulator, with only 4 customers paying tiny shops over and over, had 44% flagged by the first retrained model). Drains: 82% blocked. Structuring: 72% blocked (the first transfer of each burst has no neighbours yet).
 
 ---
 
