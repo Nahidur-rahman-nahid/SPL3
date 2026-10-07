@@ -1,12 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getStats } from "@/lib/api";
-import { useAuth } from "@/lib/auth-context";
 import StatsPanel from "@/components/StatsPanel";
-import ScoreForm from "@/components/ScoreForm";
 import LiveFeed from "@/components/LiveFeed";
 
 // Fallback safety-net poll in case the WebSocket drops silently — the
@@ -15,8 +12,6 @@ import LiveFeed from "@/components/LiveFeed";
 const STATS_FALLBACK_POLL_MS = 15000;
 
 export default function DashboardPage() {
-  const router = useRouter();
-  const { user, role, logout } = useAuth();
   const [stats, setStats] = useState(null);
 
   const loadStats = useCallback(async () => {
@@ -33,48 +28,22 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [loadStats]);
 
-  async function handleLogout() {
-    await logout();
-    router.replace("/login");
-  }
-
   return (
-    <div className="min-h-screen flex-1 bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">Fraud Detection Dashboard</h1>
-          <p className="text-xs text-slate-500">Graph Neural Network — real-time transaction scoring</p>
+    <div className="flex-1">
+      <main className="p-6 max-w-6xl mx-auto space-y-6 w-full">
+        <div className="flex items-end justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-xl font-semibold text-white">Fraud Detection Dashboard</h1>
+            <p className="text-sm text-slate-500 mt-1">Graph Neural Network — real-time transaction scoring</p>
+          </div>
+          <Link
+            href="/scoring"
+            className="rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 transition-colors"
+          >
+            Score a transaction
+          </Link>
         </div>
-        <div className="flex items-center gap-4">
-          <Link href="/alerts" className="text-sm text-slate-400 hover:text-white transition-colors">
-            Alerts & Review Queue →
-          </Link>
-          <Link href="/stream" className="text-sm text-slate-400 hover:text-white transition-colors">
-            Live Stream Monitor →
-          </Link>
-          {role === "ADMIN" && (
-            <>
-              <Link href="/admin/users" className="text-sm text-slate-400 hover:text-white transition-colors">
-                Manage Users →
-              </Link>
-              <Link href="/admin/data" className="text-sm text-slate-400 hover:text-white transition-colors">
-                Data Cleanup →
-              </Link>
-            </>
-          )}
-          <Link href="/account" className="text-sm text-slate-400 hover:text-white transition-colors">
-            {user?.username}
-          </Link>
-          {role && <span className="text-xs px-2 py-1 rounded bg-slate-800 text-slate-300">{role}</span>}
-          <button onClick={handleLogout} className="text-sm text-slate-400 hover:text-white transition-colors">
-            Log out
-          </button>
-        </div>
-      </header>
-
-      <main className="p-6 max-w-6xl mx-auto space-y-6">
         <StatsPanel stats={stats} />
-        <ScoreForm onScored={loadStats} />
         <LiveFeed onEvent={loadStats} />
       </main>
     </div>

@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { buildAlertsSocketUrl, getStreamStatus, toggleStream } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 
@@ -25,8 +23,7 @@ function StatTile({ label, value, accent = "text-white" }) {
 }
 
 export default function StreamMonitorPage() {
-  const router = useRouter();
-  const { role, logout } = useAuth();
+  const { role } = useAuth();
   const [connected, setConnected] = useState(false);
   const [streamEnabled, setStreamEnabled] = useState(null); // null = not loaded yet
   const [toggling, setToggling] = useState(false);
@@ -97,34 +94,16 @@ export default function StreamMonitorPage() {
     }
   }
 
-  async function handleLogout() {
-    await logout();
-    router.replace("/login");
-  }
-
   const elapsedMinutes = Math.max((Date.now() - startTimeRef.current) / 60000, 1 / 60);
   const perMinute = sessionStats.total / elapsedMinutes;
 
   return (
-    <div className="min-h-screen flex-1 bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between flex-wrap gap-3">
+    <div className="flex-1">
+      <main className="p-6 max-w-5xl mx-auto space-y-6 w-full">
         <div>
-          <h1 className="text-lg font-semibold">Live Stream Monitor</h1>
-          <p className="text-xs text-slate-500">
-            Every transaction here was scored automatically — nobody clicked a button
-          </p>
+          <h1 className="text-xl font-semibold text-white">Live Stream Monitor</h1>
+          <p className="text-sm text-slate-500 mt-1">Every transaction here was scored automatically — nobody clicked a button</p>
         </div>
-        <div className="flex items-center gap-4">
-          <Link href="/dashboard" className="text-sm text-slate-400 hover:text-white transition-colors">
-            ← Dashboard
-          </Link>
-          <button onClick={handleLogout} className="text-sm text-slate-400 hover:text-white transition-colors">
-            Log out
-          </button>
-        </div>
-      </header>
-
-      <main className="p-6 max-w-5xl mx-auto space-y-6">
         <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-lg px-4 py-3 flex items-start gap-2.5">
           <span className="text-indigo-400 text-sm leading-none mt-0.5">ⓘ</span>
           <p className="text-xs text-slate-400 leading-relaxed">

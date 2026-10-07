@@ -308,3 +308,22 @@ def test_deleted_rows_gone_from_results_and_stats(as_role, db, model):
     api_delete(client, ["demo-1"])
     assert [r["transaction_id"] for r in client.get("/api/fraud/results").json()] == ["demo-2"]
     assert client.get("/api/fraud/stats").json()["total_scored"] == 1
+
+
+# API-D-10
+def test_stats_pending_alerts_counts_unacknowledged_only(as_role, db, model):
+    model.probability = 0.6  # REVIEW → alert
+    for i in range(3):
+        score(db, f"demo-{i}")
+    client = as_role("ADMIN")
+    assert client.get("/api/fraud/stats").json()["pending_alerts"] == 3
+    alert_id = (
+        db.query(models.Alert.alert_id)
+        .join(models.FraudDecision, models.Alert.decision_id == models.FraudDecision.decision_id)
+        .filter(models.FraudDecision.transaction_id == "demo-0")
+        .scalar()
+    )
+    client.post(f"/api/fraud/alerts/{alert_id}/acknowledge", json={"is_false_positive": False})
+    assert client.get("/api/fraud/stats").json()["pending_alerts"] == 2
+    api_delete(client, ["demo-1", "demo-2"])
+    assert client.get("/api/fraud/stats").json()["pending_alerts"] == 0

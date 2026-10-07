@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import AppNavbar from "@/components/AppNavbar";
 
 // This redirect is a UX convenience only, not the security boundary — every
 // protected backend endpoint enforces auth/RBAC itself (see backend/auth.py's
@@ -34,5 +35,12 @@ export default function ProtectedLayout({ children }) {
     );
   }
 
-  return children;
+  // No navbar while a temporary password must be changed — the account page
+  // is the only place that user can go anyway.
+  return (
+    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
+      {!user.must_change_password && <AppNavbar />}
+      {children}
+    </div>
+  );
 }

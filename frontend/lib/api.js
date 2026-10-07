@@ -208,3 +208,14 @@ export function purgeTransactions(source, before) {
     body: JSON.stringify(purgeParams(source, before)),
   });
 }
+
+// ------------------------------------------------ fraud patterns demo page
+
+export function getPatterns() {
+  return apiFetch("/api/patterns");
+}
+
+// variant: "fraud" (the pattern) | "lookalike" (its legitimate twin)
+export function runPattern(patternId, variant) {
+  return apiFetch(`/api/patterns/${patternId}/run?variant=${variant}`, { method: "POST" });
+}

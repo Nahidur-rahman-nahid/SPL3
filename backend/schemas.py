@@ -125,6 +125,8 @@ class StatsOut(BaseModel):
     block_count: int
     fraud_rate_estimate: Optional[float]
     avg_inference_latency_ms: Optional[float]
+    # Alerts nobody has acknowledged yet — drives the navbar's Alerts badge.
+    pending_alerts: int = 0
 
 
 class AcknowledgeAlertRequest(BaseModel):
@@ -159,3 +161,50 @@ class DeleteTransactionsResult(BaseModel):
 
 class PurgePreview(BaseModel):
     count: int
+
+
+# ------------------------------------------------- fraud patterns demo page
+
+PatternVariant = Literal["fraud", "lookalike"]
+
+
+class PatternInfo(BaseModel):
+    id: str
+    title: str
+    summary: str
+    signal: str
+    lookalike_title: str
+    lookalike_summary: str
+
+
+class PatternList(BaseModel):
+    model: dict
+    patterns: List[PatternInfo]
+
+
+class PatternStep(BaseModel):
+    index: int
+    transaction_id: str
+    sender: str
+    receiver: str
+    type: str
+    amount: float
+    share_of_balance: Optional[float]
+    receiver_was_empty: bool
+    note: str
+    neighbour_count: int
+    probability: float
+    alone_probability: float
+    decision: str
+    risk_level: str
+
+
+class PatternRunResult(BaseModel):
+    pattern_id: str
+    variant: PatternVariant
+    run_id: str
+    redis_available: bool
+    steps: List[PatternStep]
+    flagged: int
+    mean_probability: float
+    mean_alone_probability: float

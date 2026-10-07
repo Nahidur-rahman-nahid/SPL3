@@ -58,7 +58,7 @@ export default function DataCleanupPage() {
 
   if (role !== "ADMIN") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-400">
+      <div className="flex-1 flex items-center justify-center py-20 text-slate-400">
         <div className="text-center">
           <p className="text-lg font-medium text-slate-200 mb-2">Admins only</p>
           <p className="text-sm mb-4">You don&apos;t have permission to delete data.</p>
@@ -90,18 +90,12 @@ export default function DataCleanupPage() {
   }
 
   return (
-    <div className="min-h-screen flex-1 bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between flex-wrap gap-3">
+    <div className="flex-1">
+      <main className="p-6 max-w-3xl mx-auto space-y-6 w-full">
         <div>
-          <h1 className="text-lg font-semibold">Data Cleanup</h1>
-          <p className="text-xs text-slate-500">Permanently delete dummy or demo transactions, with their decisions and alerts</p>
+          <h1 className="text-xl font-semibold text-white">Data Cleanup</h1>
+          <p className="text-sm text-slate-500 mt-1">Permanently delete dummy or demo transactions, with their decisions and alerts</p>
         </div>
-        <Link href="/dashboard" className="text-sm text-slate-400 hover:text-white transition-colors">
-          ← Dashboard
-        </Link>
-      </header>
-
-      <main className="p-6 max-w-3xl mx-auto space-y-6">
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 space-y-5">
           <div>
             <h2 className="text-sm font-medium text-slate-300 mb-3">What to delete</h2>

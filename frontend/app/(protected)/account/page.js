@@ -45,7 +45,7 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="min-h-screen flex-1 flex items-center justify-center bg-slate-950 px-4">
+    <div className="flex-1 flex items-center justify-center px-4 py-10">
       <form
         onSubmit={handleSubmit}
         className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-xl"

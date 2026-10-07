@@ -1,43 +1,15 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { useAuth } from "@/lib/auth-context";
 import AlertQueue from "@/components/AlertQueue";
 
 export default function AlertsPage() {
-  const router = useRouter();
-  const { role, logout } = useAuth();
-
-  async function handleLogout() {
-    await logout();
-    router.replace("/login");
-  }
-
   return (
-    <div className="min-h-screen flex-1 bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between flex-wrap gap-3">
+    <div className="flex-1">
+      <main className="p-6 max-w-5xl mx-auto space-y-6 w-full">
         <div>
-          <h1 className="text-lg font-semibold">Alerts & Review Queue</h1>
-          <p className="text-xs text-slate-500">
-            The Alert &amp; Decision Engine — why each transaction was flagged, and what happens if nobody reviews it
-          </p>
+          <h1 className="text-xl font-semibold text-white">Alerts & Review Queue</h1>
+          <p className="text-sm text-slate-500 mt-1">The Alert &amp; Decision Engine — why each transaction was flagged, and what happens if nobody reviews it</p>
         </div>
-        <div className="flex items-center gap-4">
-          <Link href="/dashboard" className="text-sm text-slate-400 hover:text-white transition-colors">
-            ← Dashboard
-          </Link>
-          <Link href="/stream" className="text-sm text-slate-400 hover:text-white transition-colors">
-            Live Stream Monitor →
-          </Link>
-          {role && <span className="text-xs px-2 py-1 rounded bg-slate-800 text-slate-300">{role}</span>}
-          <button onClick={handleLogout} className="text-sm text-slate-400 hover:text-white transition-colors">
-            Log out
-          </button>
-        </div>
-      </header>
-
-      <main className="p-6 max-w-5xl mx-auto space-y-6">
         <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-lg px-4 py-3 flex items-start gap-2.5">
           <span className="text-indigo-400 text-sm leading-none mt-0.5">ⓘ</span>
           <p className="text-xs text-slate-400 leading-relaxed">

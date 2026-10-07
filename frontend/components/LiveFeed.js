@@ -240,7 +240,7 @@ export default function LiveFeed({ onEvent }) {
             {!loading && rows.length === 0 && (
               <tr>
                 <td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-slate-500">
-                  No transactions scored yet — try the form above.
+                  No transactions scored yet — score one on the Score page.
                 </td>
               </tr>
             )}

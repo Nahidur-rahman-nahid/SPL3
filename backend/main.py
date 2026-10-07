@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 import escalation
 import ml_service
 import models
+import pattern_demo
 import schemas
 import stream_simulator
 import transaction_admin
@@ -226,6 +227,27 @@ async def score(
     return schemas.ScoreResponse(**result)
 
 
+# ------------------------------------------------------ fraud patterns demo
+# Replays each injected fraud pattern (or its legit look-alike) through the
+# real scoring pipeline, one transaction at a time — see pattern_demo.py.
+
+@app.get("/api/patterns", response_model=schemas.PatternList)
+def list_fraud_patterns(_user: models.User = Depends(get_current_user)):
+    return pattern_demo.list_patterns()
+
+
+@app.post("/api/patterns/{pattern_id}/run", response_model=schemas.PatternRunResult, dependencies=[Depends(require_csrf)])
+async def run_fraud_pattern(
+    pattern_id: str,
+    variant: schemas.PatternVariant = "fraud",
+    db: Session = Depends(get_db),
+    _user: models.User = Depends(get_current_user),
+):
+    if pattern_id not in pattern_demo.PATTERNS:
+        raise HTTPException(status_code=404, detail="Unknown pattern")
+    return await pattern_demo.run_pattern(pattern_id, variant, db)
+
+
 @app.get("/api/stream/status")
 def get_stream_status(_user: models.User = Depends(get_current_user)):
     return {"enabled": stream_simulator.is_enabled(), "interval_seconds": settings.STREAM_INTERVAL_SECONDS}
@@ -322,6 +344,9 @@ def get_stats(db: Session = Depends(get_db), _user: models.User = Depends(get_cu
     ).one()
     total, allow_count, review_count, block_count, avg_latency = row
     total = total or 0
+    pending_alerts = (
+        db.query(func.count(models.Alert.alert_id)).filter(models.Alert.acknowledged_at.is_(None)).scalar()
+    )
 
     return schemas.StatsOut(
         total_scored=total,
@@ -330,6 +355,7 @@ def get_stats(db: Session = Depends(get_db), _user: models.User = Depends(get_cu
         block_count=block_count or 0,
         fraud_rate_estimate=(block_count / total) if total else None,
         avg_inference_latency_ms=float(avg_latency) if avg_latency is not None else None,
+        pending_alerts=pending_alerts or 0,
     )
 
 

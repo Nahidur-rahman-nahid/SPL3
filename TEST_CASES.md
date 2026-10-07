@@ -1,13 +1,15 @@
-# Test Cases: Regulatory Daily Limits, Night-Time Rule & Transaction Deletion
+# Test Cases: Regulatory Rules, Transaction Deletion, Fraud Patterns Demo & Stream Simulator
 
 **Project:** GNN-based Real-Time Fraud Detection for Mobile Financial Services (SPL3)
 **Features under test:**
 1. **Bangladesh Bank daily limits:** a transaction that pushes the sender's daily total for its type over the limit is hard-blocked (`decision=BLOCK`, `risk_level=REGULATORY`). Limits: CASH_OUT BDT 30,000/day, TRANSFER (P2P send money) BDT 50,000/day.
 2. **Night-time high-value rule:** a transaction over BDT 10,000 between 23:00 and 03:59 Bangladesh time (UTC+6) is held for `REVIEW`, whatever the GNN score.
 3. **Transaction deletion (admin):** an admin can delete one or several selected transactions, or bulk-delete by source (stream simulator / manually scored / everything) and age. Each transaction's decisions and alerts are deleted with it.
+4. **Fraud Patterns demo:** each of the 6 injected fraud patterns, and its legitimate look-alike, can be replayed through the real scoring pipeline one transaction at a time.
+5. **Stream simulator:** everyday traffic from recurring accounts with chained balances; fraud arrives as groups (drains into a shared mule, structuring bursts).
 
-**Test dates:** 2026-10-05 (features 1–2), 2026-10-07 (feature 3)
-**Result:** **112 / 112 passed** (97 test cases; some cases run with several inputs)
+**Test dates:** 2026-10-05 (features 1–2), 2026-10-07 (features 3–5)
+**Result:** **145 / 145 passed** (115 test cases; some cases run with several inputs)
 
 ---
 
@@ -59,8 +61,10 @@ python -m pytest tests -v
 | 3. Scoring pipeline integration | `tests/test_scoring_pipeline_rules.py` | 25 | 27 | 27 |
 | 4. REST API | `tests/test_score_api.py` | 8 | 8 | 8 |
 | 5. Real-model smoke | `tests/test_real_model_smoke.py` | 3 | 3 | 3 |
-| 6. Transaction deletion | `tests/test_transaction_delete.py` | 27 | 30 | 30 |
-| **Total** | | **97** | **112** | **112** |
+| 6. Transaction deletion | `tests/test_transaction_delete.py` | 28 | 31 | 31 |
+| 7. Fraud Patterns demo | `tests/test_pattern_demo.py` | 12 | 27 | 27 |
+| 8. Stream simulator | `tests/test_stream_simulator.py` | 5 | 5 | 5 |
+| **Total** | | **115** | **145** | **145** |
 
 ---
 
@@ -214,6 +218,7 @@ Starting data: 3 `stream-` transactions + 2 `demo-` transactions.
 | API-D-07 | Bulk delete rejected | Invalid source "everything"; ANALYST with source "all" | 422; 403; all 5 rows still present | Pass |
 | API-D-08 | Login required | Delete with no session | HTTP 401/403 | Pass |
 | API-D-09 | Deleted rows gone everywhere | Delete `demo-1` of 2 | `/api/fraud/results` lists only `demo-2`; `/api/fraud/stats` total = 1 | Pass |
+| API-D-10 | Pending-alerts count (navbar Alerts badge) | 3 alerted transactions; acknowledge 1; then delete the other 2 | `pending_alerts` = 3, then 2, then 0 | Pass |
 
 **Manual end-to-end check (2026-10-07):** both servers were run against a throwaway SQLite database, with every request going through the frontend proxy. 6 transactions were scored (3 `demo-`, 3 `stream-`):
 - previews: stream 3 / manual 3 / all 6;
@@ -223,6 +228,43 @@ Starting data: 3 `stream-` transactions + 2 `demo-` transactions.
 - the `/admin/data` page loaded.
 
 The frontend production build (`next build`) compiled all pages, including the new `/admin/data`.
+
+---
+
+## Suite 7: Fraud Patterns Demo
+
+Real SQLite database, fakeredis, fake model (fixed probability), so these tests check the demo's mechanics, not the model's scores. Endpoints: `GET /api/patterns`, `POST /api/patterns/{id}/run?variant=fraud|lookalike`.
+
+| ID | Test case | Input | Expected result | Status |
+|---|---|---|---|---|
+| PD-01 | List the patterns | `GET /api/patterns` | The 6 patterns in order, plus the loaded model's info | Pass |
+| PD-02 | Neighbours build up one by one | Run STRUCTURING (fraud) | Linked counts 0, 1, 2, 3; amounts 48,200 / 49,100 / 47,500 / 46,900; Redis available | Pass |
+| PD-03 | Look-alike is identical but unlinked | Run STRUCTURING fraud and look-alike | Same type, amount, share of balance and receiver-empty flag step by step; look-alike linked count always 0 | Pass |
+| PD-04 | Every pattern and variant runs | 6 patterns × 2 variants | At least one step; amounts > 0; probabilities in [0, 1]; decision ALLOW / REVIEW / BLOCK | Pass (12 runs) |
+| PD-05 | Fraud groups get linked | MULE_HUB, AGENT_COLLUSION, MULE_NETWORK, SMURF_FANOUT, ACCOUNT_TAKEOVER | Last step linked to ≥ 1; some step linked to ≥ 2 | Pass (5 runs) |
+| PD-06 | Runs never share accounts | Run MULE_HUB twice | Different run IDs; second run starts with 0 neighbours; no account in common | Pass |
+| PD-07 | Bangladesh Bank rules skipped in the demo | STRUCTURING (BDT 191,700 in a day, over the 50,000 limit) | No REGULATORY decision; sender's daily total stays 0 | Pass |
+| PD-08 | Demo rows are stored and removable | Run AGENT_COLLUSION | IDs start with `pattern-agent_collusion-fraud-`; all stored; counted as "manual" data in Data Cleanup | Pass |
+| PD-09 | "Alone" score comes from the model without neighbours | Fake model returns 0.33 | Every step's `alone_probability` = 0.33 | Pass |
+| PD-10 | Balances chain like a real account | STRUCTURING | Each transfer is a larger share of the shrinking balance | Pass |
+| PD-11 | Bad input | Unknown pattern `NOPE`; variant `other` | 404; 422 | Pass |
+| PD-12 | Login and CSRF required | No session | 401 for the list; 401/403 for a run | Pass |
+
+**Real-model check (2026-10-07, retrained model "PaySim + injected patterns"):** each fraud pattern's first transaction scores low (it has no neighbours yet); from the second one on, scores reach 65–98%. Every look-alike stays at 0–7%: Structuring 3/4 flagged vs 0/4, Mule network 11/12 vs 0/12.
+
+## Suite 8: Stream Simulator
+
+Generator only (nothing is scored); the random seed is fixed.
+
+| ID | Test case | Input | Expected result | Status |
+|---|---|---|---|---|
+| SS-01 | Every transaction balances | 500 generated | amount > 0; sender new = old − amount; receiver new = old + amount; no negative balance | Pass |
+| SS-02 | Balances carry over | 500 generated | An account's next opening balance equals its last closing balance (everyday customers may only go up, from a salary top-up) | Pass |
+| SS-03 | Structuring burst | Queue one burst | 3–5 consecutive transfers, same sender and receiver, each BDT 45,000–49,999 | Pass |
+| SS-04 | Drains into shared mules | 12 drains | Every victim emptied and new; several victims per mule | Pass |
+| SS-05 | Everyday traffic | 1,000 generated | > 70% from the recurring customer pool; each customer always pays the same relative | Pass |
+
+**Real-model check (2026-10-07):** 400 stream transactions were scored with the retrained model. Everyday traffic: 300 of 303 allowed (1% flagged; the old simulator, with only 4 customers paying tiny shops over and over, had 44% flagged). Drains: 79% blocked. Structuring: 73% flagged (the first transfer of each burst has no neighbours yet).
 
 ---
 

@@ -51,7 +51,7 @@ export default function AdminUsersPage() {
 
   if (role !== "ADMIN") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-400">
+      <div className="flex-1 flex items-center justify-center py-20 text-slate-400">
         <div className="text-center">
           <p className="text-lg font-medium text-slate-200 mb-2">Admins only</p>
           <p className="text-sm mb-4">You don&apos;t have permission to manage users.</p>
@@ -110,18 +110,12 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="min-h-screen flex-1 bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between flex-wrap gap-3">
+    <div className="flex-1">
+      <main className="p-6 max-w-4xl mx-auto space-y-6 w-full">
         <div>
-          <h1 className="text-lg font-semibold">Manage Users</h1>
-          <p className="text-xs text-slate-500">Create accounts, change roles, deactivate, reset passwords — no public signup</p>
+          <h1 className="text-xl font-semibold text-white">Manage Users</h1>
+          <p className="text-sm text-slate-500 mt-1">Create accounts, change roles, deactivate, reset passwords — no public signup</p>
         </div>
-        <Link href="/dashboard" className="text-sm text-slate-400 hover:text-white transition-colors">
-          ← Dashboard
-        </Link>
-      </header>
-
-      <main className="p-6 max-w-4xl mx-auto space-y-6">
         {reveal && <RevealPassword label={reveal.label} value={reveal.value} onDismiss={() => setReveal(null)} />}
         {error && <p className="text-sm text-rose-400">{error}</p>}
 

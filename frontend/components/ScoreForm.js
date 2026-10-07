@@ -25,9 +25,10 @@ const PRESETS = {
       step: 10, type: "TRANSFER", amount: 181000, oldbalanceOrg: 181000,
       newbalanceOrig: 0, oldbalanceDest: 0, newbalanceDest: 181000,
     },
-    neighbours: [
-      { step: 10, type: "CASH_OUT", amount: 90000, oldbalanceOrg: 90000, newbalanceOrig: 0, oldbalanceDest: 5000, newbalanceDest: 95000 },
-    ],
+    // No supplied neighbour: the current checkpoint scores this drain
+    // pattern 56.8% (REVIEW) on its own but 30.9% (ALLOW) with the old
+    // dummy CASH_OUT attached — neighbours currently pull scores down.
+    neighbours: [],
   },
   highrisk: {
     label: "High-Risk (agent collusion pattern)",
@@ -110,7 +111,7 @@ export default function ScoreForm({ onScored }) {
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-lg p-5">
-      <h2 className="text-sm font-medium text-slate-300 mb-3">Score a Transaction</h2>
+      <h2 className="text-sm font-medium text-slate-300 mb-3">Transaction details</h2>
 
       <div className="flex flex-wrap gap-2 mb-4">
         {Object.entries(PRESETS).map(([key, preset]) => (
