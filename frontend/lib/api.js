@@ -1,4 +1,7 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+// All requests go through Next.js rewrites (next.config.mjs) so the browser
+// sees them as same-origin — this fixes SameSite=lax cookies between
+// localhost:3000 (frontend) and localhost:8000 (backend).
+const API_BASE = "";
 
 // Auth is entirely cookie-based (see backend/auth.py) — access_token and
 // refresh_token are httpOnly (never touched here), csrf_token is the one
@@ -54,7 +57,12 @@ async function apiFetch(path, options = {}, _isRetry = false) {
       await refreshSession();
       return apiFetch(path, options, true);
     } catch {
-      if (typeof window !== "undefined") window.location.href = "/login";
+      // Not on /login already: AuthProvider (root layout) calls /auth/me on
+      // every page load, including /login itself, so redirecting from there
+      // would reload /login → /auth/me → 401 → redirect … in an endless loop.
+      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
       throw new Error("Session expired — please log in again.");
     }
   }
@@ -135,8 +143,10 @@ export function resetUserPassword(userId) {
 // no token in the URL (and therefore no token in server logs/browser
 // history) unlike the old ?token= query param.
 export function buildAlertsSocketUrl() {
-  const wsBase = API_BASE.replace(/^http/, "ws");
-  return `${wsBase}/ws/alerts`;
+  // Use the browser's own origin so WebSocket goes through Next.js proxy.
+  if (typeof window === "undefined") return "ws://127.0.0.1:3000/ws/alerts";
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/ws/alerts`;
 }
 
 // -------------------------------------------------------------- fraud API
