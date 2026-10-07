@@ -1,12 +1,13 @@
-# Test Cases: Regulatory Daily Limits & Night-Time High-Value Rule
+# Test Cases: Regulatory Daily Limits, Night-Time Rule & Transaction Deletion
 
 **Project:** GNN-based Real-Time Fraud Detection for Mobile Financial Services (SPL3)
 **Features under test:**
 1. **Bangladesh Bank daily limits:** a transaction that pushes the sender's daily total for its type over the limit is hard-blocked (`decision=BLOCK`, `risk_level=REGULATORY`). Limits: CASH_OUT BDT 30,000/day, TRANSFER (P2P send money) BDT 50,000/day.
 2. **Night-time high-value rule:** a transaction over BDT 10,000 between 23:00 and 03:59 Bangladesh time (UTC+6) is held for `REVIEW`, whatever the GNN score.
+3. **Transaction deletion (admin):** an admin can delete one or several selected transactions, or bulk-delete by source (stream simulator / manually scored / everything) and age. Each transaction's decisions and alerts are deleted with it.
 
-**Test date:** 2026-10-05
-**Result:** **82 / 82 passed** (70 test cases; some cases run with several inputs)
+**Test dates:** 2026-10-05 (features 1–2), 2026-10-07 (feature 3)
+**Result:** **112 / 112 passed** (97 test cases; some cases run with several inputs)
 
 ---
 
@@ -44,6 +45,10 @@ python -m pytest tests -v
 | BR-8 | Both rules apply to `POST /score` only. The live stream simulator is unaffected. |
 | BR-9 | If Redis is unavailable, the limit check is skipped (fail open) and scoring continues. |
 | BR-10 | Both features can be switched off by configuration (`REGULATORY_LIMITS_ENABLED`, `NIGHT_RULE_ENABLED`). |
+| BR-11 | Only an ADMIN can delete transactions. Analysts get 403. Every delete needs a valid session and a CSRF token. |
+| BR-12 | Deleting a transaction also deletes all its decisions and their alerts, in one database transaction. Other transactions are untouched. |
+| BR-13 | A deleted transaction no longer appears as a related transaction (Redis neighbour list) in new scores. If it counted toward today's daily limit, its amount is given back. |
+| BR-14 | Bulk delete picks rows by source: `stream` = IDs starting with `stream-`, `manual` = everything else, `all` = both. It can be limited to rows older than a chosen time. |
 
 ## 3. Summary
 
@@ -54,7 +59,8 @@ python -m pytest tests -v
 | 3. Scoring pipeline integration | `tests/test_scoring_pipeline_rules.py` | 25 | 27 | 27 |
 | 4. REST API | `tests/test_score_api.py` | 8 | 8 | 8 |
 | 5. Real-model smoke | `tests/test_real_model_smoke.py` | 3 | 3 | 3 |
-| **Total** | | **70** | **82** | **82** |
+| 6. Transaction deletion | `tests/test_transaction_delete.py` | 27 | 30 | 30 |
+| **Total** | | **97** | **112** | **112** |
 
 ---
 
@@ -161,6 +167,63 @@ Uses the real `FraudGNN_main.pt`, `scaler.pkl` and `type_encoder.pkl`.
 | SM-02 | Regulatory block with the real model | 60,000 TRANSFER | BLOCK / REGULATORY; real probability between 0 and 1 stored | Pass |
 | SM-03 | Night rule never lowers the real model's decision | 15,000: once in daytime (stream), once at 23:30 (API) | Night decision is at least REVIEW and at least the daytime decision | Pass |
 
+## Suite 6: Transaction Deletion (Admin)
+
+Real SQLite database, fakeredis, fake model. Transactions are created by scoring them through the real pipeline. "Counts" means (transactions, decisions, alerts).
+
+**Delete selected transactions (`transaction_admin.delete_transactions`)**
+
+| ID | Test case | Input | Expected result | Status |
+|---|---|---|---|---|
+| DEL-01 | Delete one transaction with an alert | `demo-1` scored at probability 0.6 (REVIEW, alert created) | Returns 1 / 1 / 1 deleted; counts become (0, 0, 0) | Pass |
+| DEL-02 | Delete several | 5 transactions; delete `demo-0`, `demo-2`, `demo-4` | 3 deleted; `demo-1`, `demo-3` remain | Pass |
+| DEL-03 | Unknown IDs | Delete `nope-1`, `nope-2`; then `nope-3` + `demo-1` | First: 0 deleted, no error. Second: only `demo-1` deleted | Pass |
+| DEL-04 | Same ID repeated | `demo-1` listed 3 times | Counted once (1 deleted) | Pass |
+| DEL-05 | Transaction scored twice | `demo-1` scored twice (2 decisions) | Both decisions deleted with it | Pass |
+| DEL-06 | Other rows untouched | Delete `demo-1` of 2 alerted transactions | `demo-2`, its decision and its alert remain | Pass |
+| DEL-07 | Removed from neighbour history | Score `demo-1`, `demo-2` (same accounts); delete `demo-1` | Sender's and receiver's Redis history hold only `demo-2`; a new score sees only `demo-2` as related | Pass |
+| DEL-08 | Daily limit given back | 30,000 + 15,000 counted today; delete the 30,000 one | Daily total drops from 45,000 to 15,000 | Pass |
+| DEL-09 | Nothing given back for uncounted rows | Delete a model-BLOCKed transaction and a `stream-` one | Daily total unchanged (neither was ever counted) | Pass |
+| DEL-10 | Refund can't go negative or recreate an expired day | Total lowered below the amount before deleting; then the day's key removed before deleting | First: total becomes 0, not negative. Second: no new (negative) key created | Pass |
+| DEL-11 | Redis down | Redis offline during delete | Database delete still succeeds (Redis cleanup skipped) | Pass |
+| DEL-12 | Large batch | 1,200 `stream-` rows (more than one 500-row chunk) | All 1,200 deleted | Pass |
+
+**Bulk delete by filter (`transaction_admin.purge` / `count_matching`)**
+
+Starting data: 3 `stream-` transactions + 2 `demo-` transactions.
+
+| ID | Test case | Input | Expected result | Status |
+|---|---|---|---|---|
+| PUR-01 | Preview count by source | source = stream / manual / all | 3 / 2 / 5 | Pass |
+| PUR-02 | Delete stream data only | source = stream | 3 deleted; both `demo-` rows remain | Pass |
+| PUR-03 | Delete manual data only | source = manual | 2 deleted; only `stream-` rows remain | Pass |
+| PUR-04 | Delete everything | source = all | 5 deleted; counts (0, 0, 0) | Pass |
+| PUR-05 | Age filter | One row 3 days old, one new; cutoff = 1 day ago, given in +06:00 time | Preview 1; only the old row deleted (timezone handled) | Pass |
+| PUR-06 | Nothing matches | source = stream with only manual data | 0 / 0 / 0, no error | Pass |
+
+**REST API**
+
+| ID | Test case | Input | Expected result | Status |
+|---|---|---|---|---|
+| API-D-01 | Admin deletes selected | `DELETE /api/transactions` `{"transaction_ids":["demo-1"]}` | HTTP 200, `{"deleted_transactions":1,"deleted_decisions":1,"deleted_alerts":0}` | Pass |
+| API-D-02 | Analyst can't delete | Same request as ANALYST | HTTP 403; row still present | Pass |
+| API-D-03 | CSRF required | Admin request without CSRF token | HTTP 403; row still present | Pass |
+| API-D-04 | List size limits | Empty list; 501 IDs | HTTP 422 for both | Pass |
+| API-D-05 | Preview endpoint | `GET /api/transactions/purge-preview?source=stream`; source=bogus; as ANALYST | `{"count":3}`; 422; 403 | Pass |
+| API-D-06 | Bulk delete + live updates | `POST /api/transactions/purge {"source":"stream"}`, then delete `demo-0` | 3 deleted; WebSocket messages `transactions_purged`, then `transactions_deleted` with `["demo-0"]` | Pass |
+| API-D-07 | Bulk delete rejected | Invalid source "everything"; ANALYST with source "all" | 422; 403; all 5 rows still present | Pass |
+| API-D-08 | Login required | Delete with no session | HTTP 401/403 | Pass |
+| API-D-09 | Deleted rows gone everywhere | Delete `demo-1` of 2 | `/api/fraud/results` lists only `demo-2`; `/api/fraud/stats` total = 1 | Pass |
+
+**Manual end-to-end check (2026-10-07):** both servers were run against a throwaway SQLite database, with every request going through the frontend proxy. 6 transactions were scored (3 `demo-`, 3 `stream-`):
+- previews: stream 3 / manual 3 / all 6;
+- deleting 2 selected rows removed 2 transactions, 2 decisions and 2 alerts (total 6 → 4);
+- purging the stream data removed 3; only `demo-c` remained;
+- a delete without the CSRF header was refused (403);
+- the `/admin/data` page loaded.
+
+The frontend production build (`next build`) compiled all pages, including the new `/admin/data`.
+
 ---
 
 ## 4. Checking That the Tests Can Fail
@@ -179,4 +242,6 @@ To make sure the tests detect real faults, the suite was run again with each fea
 - If a transaction is scored again after being blocked **by the model** (not by the limit), it was never counted, so it is not counted on the re-score either.
 - The monthly P2P limit (BDT 300,000) and the maximum wallet balance (BDT 500,000) are not implemented.
 - The frontend display of `limit_usage` in `ScoreForm.js` was checked by code review only (no automated UI test).
+- The deletion UI (row checkboxes, Delete selected button, Data Cleanup page) has no automated browser test. The backend it calls is fully tested (Suite 6) and the pages compile in a production build; clicking through them was not automated.
+- Deletion is permanent (hard delete); there is no undo or archive.
 - Tests used fakeredis, not the hosted Upstash Redis.

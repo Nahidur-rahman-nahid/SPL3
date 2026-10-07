@@ -181,3 +181,30 @@ export function getStreamStatus() {
 export function toggleStream() {
   return apiFetch("/api/stream/toggle", { method: "POST" });
 }
+
+// ------------------------------------------ admin: delete transactions
+
+export function deleteTransactions(transactionIds) {
+  return apiFetch("/api/transactions", {
+    method: "DELETE",
+    body: JSON.stringify({ transaction_ids: transactionIds }),
+  });
+}
+
+// source: "stream" | "manual" | "all"; before: optional Date — only rows
+// received before it.
+function purgeParams(source, before) {
+  return { source, ...(before ? { before: before.toISOString() } : {}) };
+}
+
+export function getPurgePreview(source, before) {
+  const params = new URLSearchParams(purgeParams(source, before));
+  return apiFetch(`/api/transactions/purge-preview?${params.toString()}`);
+}
+
+export function purgeTransactions(source, before) {
+  return apiFetch("/api/transactions/purge", {
+    method: "POST",
+    body: JSON.stringify(purgeParams(source, before)),
+  });
+}

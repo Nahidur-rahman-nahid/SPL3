@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { acknowledgeAlert, buildAlertsSocketUrl, getResults } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import DeleteSelectedButton from "@/components/DeleteSelectedButton";
 
 const ROW_STYLES = {
   ALLOW: "border-l-4 border-emerald-500",
@@ -25,6 +26,8 @@ export default function LiveFeed({ onEvent }) {
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [ackingId, setAckingId] = useState(null);
+  const [selected, setSelected] = useState(() => new Set());
+  const isAdmin = user?.role === "ADMIN";
   const socketRef = useRef(null);
   const reconnectTimerRef = useRef(null);
 
@@ -63,6 +66,19 @@ export default function LiveFeed({ onEvent }) {
           onEvent?.();
         }
 
+        // Deletions made by an admin (here or in another tab / the Data
+        // Cleanup page) — drop the rows instead of showing stale ones.
+        if (msg.type === "transactions_deleted") {
+          removeRows(msg.transaction_ids);
+          onEvent?.();
+        }
+
+        if (msg.type === "transactions_purged") {
+          setSelected(new Set());
+          loadInitial();
+          onEvent?.();
+        }
+
         if (msg.type === "alert_acknowledged") {
           setRows((prev) =>
             prev.map((r) =>
@@ -90,7 +106,27 @@ export default function LiveFeed({ onEvent }) {
       clearTimeout(reconnectTimerRef.current);
       socketRef.current?.close();
     };
-  }, [onEvent]);
+  }, [onEvent, loadInitial]);
+
+  function removeRows(ids) {
+    const gone = new Set(ids);
+    setRows((prev) => prev.filter((r) => !gone.has(r.transaction_id)));
+    setSelected((prev) => new Set([...prev].filter((id) => !gone.has(id))));
+  }
+
+  function toggleRow(id) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.transaction_id));
+
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.transaction_id)));
+  }
 
   async function handleAcknowledge(row, isFalsePositive) {
     setAckingId(row.alert_id);
@@ -111,15 +147,31 @@ export default function LiveFeed({ onEvent }) {
     <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
       <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
         <h2 className="text-sm font-medium text-slate-300">Live Transaction Feed</h2>
-        <span className={`text-xs flex items-center gap-1.5 ${connected ? "text-emerald-400" : "text-slate-500"}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-emerald-400" : "bg-slate-600"}`} />
-          {connected ? "live" : "reconnecting…"}
-        </span>
+        <div className="flex items-center gap-3">
+          {isAdmin && (
+            <DeleteSelectedButton
+              selectedIds={[...selected]}
+              onDeleted={(ids) => {
+                removeRows(ids);
+                onEvent?.();
+              }}
+            />
+          )}
+          <span className={`text-xs flex items-center gap-1.5 ${connected ? "text-emerald-400" : "text-slate-500"}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-emerald-400" : "bg-slate-600"}`} />
+            {connected ? "live" : "reconnecting…"}
+          </span>
+        </div>
       </div>
       <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="text-xs text-slate-500 uppercase sticky top-0 bg-slate-900">
             <tr>
+              {isAdmin && (
+                <th className="pl-4 py-2 w-8">
+                  <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all" className="accent-indigo-500" />
+                </th>
+              )}
               <th className="text-left px-4 py-2">Time</th>
               <th className="text-left px-4 py-2">Transaction</th>
               <th className="text-left px-4 py-2">Sender → Receiver</th>
@@ -132,6 +184,17 @@ export default function LiveFeed({ onEvent }) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.transaction_id} className={`${ROW_STYLES[r.decision] || ""} hover:bg-slate-800/50`}>
+                {isAdmin && (
+                  <td className="pl-4 py-2">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(r.transaction_id)}
+                      onChange={() => toggleRow(r.transaction_id)}
+                      aria-label={`Select ${r.transaction_id}`}
+                      className="accent-indigo-500"
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-2 text-slate-400 whitespace-nowrap">
                   {new Date(r.decided_at).toLocaleTimeString()}
                 </td>
@@ -176,7 +239,7 @@ export default function LiveFeed({ onEvent }) {
             ))}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-slate-500">
                   No transactions scored yet — try the form above.
                 </td>
               </tr>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { acknowledgeAlert, buildAlertsSocketUrl, getResults } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import DeleteSelectedButton from "@/components/DeleteSelectedButton";
 
 // This page is the Alert & Decision Engine surfaced as its own feature —
 // everything here is downstream of a probability ml_service.py already
@@ -45,6 +46,8 @@ export default function AlertQueue() {
   const [connected, setConnected] = useState(false);
   const [ackingId, setAckingId] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [selected, setSelected] = useState(() => new Set());
+  const isAdmin = user?.role === "ADMIN";
   const socketRef = useRef(null);
   const reconnectTimerRef = useRef(null);
 
@@ -93,6 +96,17 @@ export default function AlertQueue() {
           );
         }
 
+        // Deletions made by an admin (here, on the dashboard, or on the Data
+        // Cleanup page) — drop the rows instead of showing stale ones.
+        if (msg.type === "transactions_deleted") {
+          removeRows(msg.transaction_ids);
+        }
+
+        if (msg.type === "transactions_purged") {
+          setSelected(new Set());
+          loadInitial();
+        }
+
         if (msg.type === "alert_escalated") {
           setRows((prev) =>
             prev.map((r) => (r.alert_id === msg.alert_id ? { ...r, escalated: true, escalated_at: msg.escalated_at } : r))
@@ -113,7 +127,21 @@ export default function AlertQueue() {
       clearTimeout(reconnectTimerRef.current);
       socketRef.current?.close();
     };
-  }, []);
+  }, [loadInitial]);
+
+  function removeRows(ids) {
+    const gone = new Set(ids);
+    setRows((prev) => prev.filter((r) => !gone.has(r.transaction_id)));
+    setSelected((prev) => new Set([...prev].filter((id) => !gone.has(id))));
+  }
+
+  function toggleRow(id) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
 
   async function handleAcknowledge(row, isFalsePositive) {
     setAckingId(row.alert_id);
@@ -142,10 +170,31 @@ export default function AlertQueue() {
     return true;
   });
 
+  // "Select all" covers the rows visible in the current tab only.
+  const allVisibleSelected = visibleRows.length > 0 && visibleRows.every((r) => selected.has(r.transaction_id));
+
+  function toggleAllVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      visibleRows.forEach((r) => (allVisibleSelected ? next.delete(r.transaction_id) : next.add(r.transaction_id)));
+      return next;
+    });
+  }
+
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
       <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-1.5">
+          {isAdmin && (
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              onChange={toggleAllVisible}
+              aria-label="Select all visible"
+              title="Select all in this tab"
+              className="mr-2 accent-indigo-500"
+            />
+          )}
           {TABS.map((t) => (
             <button
               key={t.key}
@@ -160,10 +209,13 @@ export default function AlertQueue() {
             </button>
           ))}
         </div>
-        <span className={`text-xs flex items-center gap-1.5 ${connected ? "text-emerald-400" : "text-slate-500"}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-emerald-400" : "bg-slate-600"}`} />
-          {connected ? "live" : "reconnecting…"}
-        </span>
+        <div className="flex items-center gap-3">
+          {isAdmin && <DeleteSelectedButton selectedIds={[...selected]} onDeleted={removeRows} />}
+          <span className={`text-xs flex items-center gap-1.5 ${connected ? "text-emerald-400" : "text-slate-500"}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-emerald-400" : "bg-slate-600"}`} />
+            {connected ? "live" : "reconnecting…"}
+          </span>
+        </div>
       </div>
 
       <div className="max-h-[600px] overflow-y-auto divide-y divide-slate-800">
@@ -177,34 +229,45 @@ export default function AlertQueue() {
           const expanded = expandedId === r.transaction_id;
           return (
             <div key={r.transaction_id}>
-              <button
-                onClick={() => setExpandedId(expanded ? null : r.transaction_id)}
-                className="w-full text-left px-4 py-3 flex items-center justify-between gap-4 flex-wrap hover:bg-slate-800/50 transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  {r.escalated && (
-                    <span className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded bg-rose-600 text-white animate-pulse">
-                      SLA BREACHED
+              <div className="flex items-center">
+                {isAdmin && (
+                  <input
+                    type="checkbox"
+                    checked={selected.has(r.transaction_id)}
+                    onChange={() => toggleRow(r.transaction_id)}
+                    aria-label={`Select ${r.transaction_id}`}
+                    className="ml-4 shrink-0 accent-indigo-500"
+                  />
+                )}
+                <button
+                  onClick={() => setExpandedId(expanded ? null : r.transaction_id)}
+                  className="flex-1 min-w-0 text-left px-4 py-3 flex items-center justify-between gap-4 flex-wrap hover:bg-slate-800/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {r.escalated && (
+                      <span className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded bg-rose-600 text-white animate-pulse">
+                        SLA BREACHED
+                      </span>
+                    )}
+                    <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${BADGE_STYLES[r.decision] || ""}`}>
+                      {r.decision} {r.risk_level}
                     </span>
-                  )}
-                  <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${BADGE_STYLES[r.decision] || ""}`}>
-                    {r.decision} {r.risk_level}
-                  </span>
-                  <span className="text-sm text-slate-300 font-mono truncate">
-                    {r.sender_account} → {r.receiver_account}
-                  </span>
-                </div>
-                <div className="flex items-center gap-4 text-xs text-slate-400 shrink-0">
-                  <span>{Number(r.amount).toLocaleString()}</span>
-                  <span>{(r.fraud_probability * 100).toFixed(1)}%</span>
-                  <span>{new Date(r.decided_at).toLocaleTimeString()}</span>
-                  {r.acknowledged_by ? (
-                    <span className="text-slate-500">{r.is_false_positive ? "false positive" : "acked"} · {r.acknowledged_by}</span>
-                  ) : (
-                    <span className="text-amber-400">needs review</span>
-                  )}
-                </div>
-              </button>
+                    <span className="text-sm text-slate-300 font-mono truncate">
+                      {r.sender_account} → {r.receiver_account}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-slate-400 shrink-0">
+                    <span>{Number(r.amount).toLocaleString()}</span>
+                    <span>{(r.fraud_probability * 100).toFixed(1)}%</span>
+                    <span>{new Date(r.decided_at).toLocaleTimeString()}</span>
+                    {r.acknowledged_by ? (
+                      <span className="text-slate-500">{r.is_false_positive ? "false positive" : "acked"} · {r.acknowledged_by}</span>
+                    ) : (
+                      <span className="text-amber-400">needs review</span>
+                    )}
+                  </div>
+                </button>
+              </div>
 
               {expanded && (
                 <div className="px-4 pb-4 bg-slate-950/50">

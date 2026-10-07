@@ -38,6 +38,7 @@ import ml_service
 import models
 import schemas
 import stream_simulator
+import transaction_admin
 import user_service
 from auth import (
     RefreshTokenReuseError,
@@ -330,6 +331,45 @@ def get_stats(db: Session = Depends(get_db), _user: models.User = Depends(get_cu
         fraud_rate_estimate=(block_count / total) if total else None,
         avg_inference_latency_ms=float(avg_latency) if avg_latency is not None else None,
     )
+
+
+# ---------------------------------------------- admin: delete transactions
+# Clearing dummy/demo data. ADMIN-only and hard delete (see
+# transaction_admin.py); open dashboards are told over the WebSocket so they
+# drop deleted rows / reload instead of showing stale ones.
+
+@app.delete("/api/transactions", response_model=schemas.DeleteTransactionsResult, dependencies=[Depends(require_csrf)])
+async def delete_transactions(
+    payload: schemas.DeleteTransactionsRequest,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_role("ADMIN")),
+):
+    result = transaction_admin.delete_transactions(db, payload.transaction_ids)
+    logger.info("%s deleted %s", admin.username, result)
+    await manager.broadcast({"type": "transactions_deleted", "transaction_ids": payload.transaction_ids})
+    return result
+
+
+@app.get("/api/transactions/purge-preview", response_model=schemas.PurgePreview)
+def purge_preview(
+    source: schemas.PurgeSource,
+    before: Optional[datetime] = None,
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_role("ADMIN")),
+):
+    return schemas.PurgePreview(count=transaction_admin.count_matching(db, source, before))
+
+
+@app.post("/api/transactions/purge", response_model=schemas.DeleteTransactionsResult, dependencies=[Depends(require_csrf)])
+async def purge_transactions(
+    payload: schemas.PurgeTransactionsRequest,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_role("ADMIN")),
+):
+    result = transaction_admin.purge(db, payload.source, payload.before)
+    logger.info("%s purged source=%s before=%s: %s", admin.username, payload.source, payload.before, result)
+    await manager.broadcast({"type": "transactions_purged"})
+    return result
 
 
 @app.post("/api/fraud/alerts/{alert_id}/acknowledge", dependencies=[Depends(require_csrf)])

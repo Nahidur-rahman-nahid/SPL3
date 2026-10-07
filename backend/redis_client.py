@@ -117,6 +117,46 @@ def reserve_daily_amount(
         return None
 
 
+def forget_daily_amount(account_id: str, txn_type: str, amount: float, when: datetime) -> None:
+    """Admin cleanup counterpart of release_daily_amount(): when a counted
+    transaction is deleted, take it back off that day's total — but only if
+    the day's key still exists (never resurrect an expired day as a negative
+    total), and never below zero."""
+    key = _daily_key(account_id, txn_type, when)
+    try:
+        client = get_client()
+        if not client.exists(key):
+            return
+        if float(client.incrbyfloat(key, -amount)) < 0:
+            client.set(key, 0, keepttl=True)
+    except redis.RedisError as e:
+        logger.warning("Daily total cleanup failed for %s: %s", account_id, e)
+
+
+def forget_transactions(entries: list) -> None:
+    """Drops deleted transactions from the per-account neighbour lists so
+    they stop showing up as related transactions in new explanations.
+    `entries` is [(transaction_id, sender_account, receiver_account), ...]."""
+    ids_by_account: dict = {}
+    for txn_id, sender, receiver in entries:
+        for account_id in (sender, receiver):
+            ids_by_account.setdefault(account_id, set()).add(txn_id)
+    try:
+        client = get_client()
+        for account_id, txn_ids in ids_by_account.items():
+            key = _key(account_id)
+            pipe = client.pipeline()
+            for raw in client.lrange(key, 0, -1):
+                try:
+                    if json.loads(raw).get("transaction_id") in txn_ids:
+                        pipe.lrem(key, 0, raw)
+                except ValueError:
+                    continue
+            pipe.execute()
+    except redis.RedisError as e:
+        logger.warning("Redis neighbour cleanup failed: %s", e)
+
+
 def release_daily_amount(account_id: str, txn_type: str, amount: float, when: Optional[datetime] = None) -> None:
     """Undoes a reserve_daily_amount() — used when the transaction ends up
     BLOCKed (or scoring fails), so blocked money doesn't eat into the limit."""

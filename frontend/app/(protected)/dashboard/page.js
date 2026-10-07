@@ -53,9 +53,14 @@ export default function DashboardPage() {
             Live Stream Monitor →
           </Link>
           {role === "ADMIN" && (
-            <Link href="/admin/users" className="text-sm text-slate-400 hover:text-white transition-colors">
-              Manage Users →
-            </Link>
+            <>
+              <Link href="/admin/users" className="text-sm text-slate-400 hover:text-white transition-colors">
+                Manage Users →
+              </Link>
+              <Link href="/admin/data" className="text-sm text-slate-400 hover:text-white transition-colors">
+                Data Cleanup →
+              </Link>
+            </>
           )}
           <Link href="/account" className="text-sm text-slate-400 hover:text-white transition-colors">
             {user?.username}

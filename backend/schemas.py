@@ -132,3 +132,30 @@ class AcknowledgeAlertRequest(BaseModel):
     # from the authenticated user (see main.py's acknowledge_alert), not
     # trusted from the client.
     is_false_positive: bool = False
+
+
+# ------------------------------------------------- admin: delete transactions
+
+# "stream" = stream simulator output ("stream-…" IDs), "manual" = everything
+# scored through POST /score, "all" = both. See transaction_admin.py.
+PurgeSource = Literal["stream", "manual", "all"]
+
+
+class DeleteTransactionsRequest(BaseModel):
+    transaction_ids: List[str] = Field(min_length=1, max_length=500)
+
+
+class PurgeTransactionsRequest(BaseModel):
+    source: PurgeSource
+    # Only delete transactions received before this instant (optional).
+    before: Optional[datetime] = None
+
+
+class DeleteTransactionsResult(BaseModel):
+    deleted_transactions: int
+    deleted_decisions: int
+    deleted_alerts: int
+
+
+class PurgePreview(BaseModel):
+    count: int
