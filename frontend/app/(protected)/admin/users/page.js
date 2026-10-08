@@ -4,8 +4,61 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { createUser, listUsers, resetUserPassword, updateUser } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useToast } from "@/components/Feedback";
 
 const ROLES = ["ADMIN", "ANALYST"];
+
+// Inline edit of a user's email — the address "Forgot password" links go to.
+function EmailCell({ user, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(user.email || "");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    const ok = await onSave(user, value.trim());
+    setSaving(false);
+    if (ok) setEditing(false);
+  }
+
+  if (!editing) {
+    return (
+      <span className="inline-flex items-center gap-2">
+        <span className={user.email ? "text-slate-400" : "text-amber-400/80"}>{user.email || "no email"}</span>
+        <button
+          onClick={() => { setValue(user.email || ""); setEditing(true); }}
+          className="text-xs text-indigo-400 hover:text-indigo-300"
+          aria-label={`Edit email of ${user.username}`}
+        >
+          Edit
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <input
+        type="email"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+          if (e.key === "Escape") setEditing(false);
+        }}
+        autoFocus
+        placeholder="name@example.com"
+        className="w-48 rounded bg-slate-800 border border-slate-700 px-2 py-1 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      />
+      <button onClick={save} disabled={saving} className="text-xs px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-60">
+        {saving ? "…" : "Save"}
+      </button>
+      <button onClick={() => setEditing(false)} className="text-xs px-2 py-1 rounded text-slate-400 hover:text-white">
+        Cancel
+      </button>
+    </span>
+  );
+}
 
 function RevealPassword({ label, value, onDismiss }) {
   return (
@@ -23,6 +76,7 @@ function RevealPassword({ label, value, onDismiss }) {
 
 export default function AdminUsersPage() {
   const { role } = useAuth();
+  const toast = useToast();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -99,6 +153,18 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function handleEmailSave(u, email) {
+    try {
+      const updated = await updateUser(u.id, { email });
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? updated : x)));
+      toast.success(email ? `Email saved for ${u.username}` : `Email removed for ${u.username}`);
+      return true;
+    } catch {
+      toast.error("Email not saved", "Enter a valid address like name@example.com.");
+      return false;
+    }
+  }
+
   async function handleReset(u) {
     try {
       const { temp_password } = await resetUserPassword(u.id);
@@ -111,7 +177,7 @@ export default function AdminUsersPage() {
 
   return (
     <div className="flex-1">
-      <main className="p-6 max-w-4xl mx-auto space-y-6 w-full">
+      <main className="p-6 max-w-6xl mx-auto space-y-6 w-full">
         <div>
           <h1 className="text-xl font-semibold text-white">Manage Users</h1>
           <p className="text-sm text-slate-500 mt-1">Create accounts, change roles, deactivate, reset passwords — no public signup</p>
@@ -133,7 +199,7 @@ export default function AdminUsersPage() {
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="Email (optional)"
+              placeholder="Email (for password reset)"
               type="email"
               className="rounded-md bg-slate-800 border border-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
@@ -175,7 +241,9 @@ export default function AdminUsersPage() {
                 {users.map((u) => (
                   <tr key={u.id} className="border-t border-slate-800">
                     <td className="px-4 py-2 text-slate-200">{u.username}</td>
-                    <td className="px-4 py-2 text-slate-400">{u.email || "—"}</td>
+                    <td className="px-4 py-2 whitespace-nowrap">
+                      <EmailCell user={u} onSave={handleEmailSave} />
+                    </td>
                     <td className="px-4 py-2">
                       <select
                         value={u.role}

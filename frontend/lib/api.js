@@ -15,6 +15,9 @@ function getCsrfToken() {
 
 const MUTATING_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
+// Pages a signed-out visitor may stay on (no redirect to /login from here).
+const PUBLIC_PATHS = new Set(["/login", "/forgot-password", "/reset-password"]);
+
 // Concurrent 401s must share one in-flight /auth/refresh call rather than
 // each firing their own — the backend's refresh-token rotation treats a
 // second, independent use of the same (still valid) refresh token as reuse
@@ -57,10 +60,11 @@ async function apiFetch(path, options = {}, _isRetry = false) {
       await refreshSession();
       return apiFetch(path, options, true);
     } catch {
-      // Not on /login already: AuthProvider (root layout) calls /auth/me on
+      // Not from a public page: AuthProvider (root layout) calls /auth/me on
       // every page load, including /login itself, so redirecting from there
-      // would reload /login → /auth/me → 401 → redirect … in an endless loop.
-      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+      // would reload /login → /auth/me → 401 → redirect … in an endless loop
+      // (and would push a signed-out user off the forgot/reset pages).
+      if (typeof window !== "undefined" && !PUBLIC_PATHS.has(window.location.pathname)) {
         window.location.href = "/login";
       }
       throw new Error("Session expired — please log in again.");
@@ -113,6 +117,30 @@ export function changePassword(currentPassword, newPassword) {
   });
 }
 
+// Signed-out "forgot password" flow. Errors carry the backend's message.
+async function publicPost(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = Array.isArray(data.detail) ? "Please check the form." : data.detail;
+    throw new Error(detail || `Request failed (${res.status})`);
+  }
+  return data;
+}
+
+export function requestPasswordReset(email) {
+  return publicPost("/auth/forgot-password", { email });
+}
+
+export function resetPasswordWithToken(token, newPassword) {
+  return publicPost("/auth/reset-password", { token, new_password: newPassword });
+}
+
 // ------------------------------------------------------- admin: user mgmt
 
 export function listUsers() {
@@ -126,10 +154,11 @@ export function createUser({ username, email, role }) {
   });
 }
 
-export function updateUser(userId, { role, is_active } = {}) {
+export function updateUser(userId, { role, is_active, email } = {}) {
   const payload = {};
   if (role !== undefined) payload.role = role;
   if (is_active !== undefined) payload.is_active = is_active;
+  if (email !== undefined) payload.email = email;
   return apiFetch(`/auth/users/${userId}`, { method: "PATCH", body: JSON.stringify(payload) });
 }
 

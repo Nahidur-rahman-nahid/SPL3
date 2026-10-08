@@ -128,7 +128,8 @@ def _contribution_scores(request: ScoreRequest, neighbours: list, base_probabili
     for i, n in enumerate(neighbours[:MAX_CONTRIBUTION_NEIGHBOURS]):
         reduced = all_features[:i] + all_features[i + 1:]
         reduced_probability, _ = ml_service.score(request.features, reduced)
-        contributions[n.transaction_id] = round(base_probability - reduced_probability, 4)
+        # 6 places (0.0001 percentage points), so the UI can show small effects
+        contributions[n.transaction_id] = round(base_probability - reduced_probability, 6)
     return contributions
 
 

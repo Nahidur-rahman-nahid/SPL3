@@ -95,3 +95,16 @@ def test_score_still_requires_authentication(db, model):
     main.app.dependency_overrides.clear()
     res = TestClient(main.app).post("/score", json=payload("api-8"))
     assert res.status_code in (401, 403)
+
+
+# API-09
+def test_result_timestamps_carry_utc_offset(client):
+    """The DB returns naive UTC datetimes; without an offset the browser
+    would show them as local time (6 hours early in Dhaka)."""
+    from datetime import datetime, timedelta, timezone
+
+    assert client.post("/score", json=payload("api-tz-1")).status_code == 200
+    stamp = client.get("/api/fraud/results").json()[0]["decided_at"]
+    parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    assert parsed.utcoffset() == timedelta(0)
+    assert abs(datetime.now(timezone.utc) - parsed) < timedelta(minutes=1)

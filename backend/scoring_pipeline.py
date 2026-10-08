@@ -231,6 +231,7 @@ async def _score_and_record(
         "sender_account": request.sender_account,
         "receiver_account": request.receiver_account,
         "amount": request.features.amount,
+        "transaction_type": request.features.type,
         "fraud_probability": fraud_probability,
         "decision": decision,
         "risk_level": risk_level,

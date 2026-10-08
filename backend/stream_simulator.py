@@ -17,7 +17,9 @@ sending small amounts to relatives and cashing out at agents — so Redis's
 neighbour memory builds up the way real accounts do. Fraud arrives in
 groups, the way the GNN learned it (00_inject_fraud_patterns.py): drains
 into a shared mule, and structuring bursts of near-limit transfers. Each
-fraud group uses fresh accounts so it only ever links to itself.
+fraud group uses fresh accounts so it only ever links to itself. A few
+grey-zone pairs (see _queue_ambiguous) give the REVIEW queue cases the model
+is honestly unsure about.
 """
 
 import asyncio
@@ -53,10 +55,16 @@ def _next_id() -> str:
     return f"stream-{int(time.time() * 1000)}-{_counter}"
 
 
+# PaySim's `step` (simulation hour, 1-743) is a raw model input, and the
+# model's grey-zone scores shift with it: at step 100 the ambiguous pairs all
+# BLOCK, at 300 drains drop to REVIEW. A fixed step keeps the stream's
+# behaviour the same at any time of day; 200 is the best balance measured
+# (and the step pattern_demo.py uses).
+STREAM_STEP = 200
+
+
 def _current_step() -> int:
-    """PaySim's `step` is the hour (1-743); use the current hour of a
-    30-day cycle so transactions close in time also share a step."""
-    return int(time.time() // 3600) % 720 + 1
+    return STREAM_STEP
 
 
 def _opening_balance(account: str) -> float:
@@ -143,18 +151,49 @@ def _queue_structuring() -> None:
     _pending.extend((sender, receiver, amount) for amount in amounts)
 
 
+def _queue_ambiguous() -> None:
+    """A pair of transactions the model is genuinely unsure about (it scores
+    the second one mostly 40-75%, i.e. REVIEW), so the analyst queue gets
+    real grey-zone cases, not only clear-cut fraud:
+      - pooled money: two people each send almost their whole balance to the
+        same small account (family pooling for a purchase, or a new mule?);
+      - two new payees: someone sends about a quarter of their balance to
+        each of two brand-new accounts (paying new suppliers, or a takeover?)."""
+    if random.random() < 0.5:
+        receiver = _fresh("C_POOL")
+        _balance[receiver] = round(random.uniform(0, 20_000), 2)
+        for _ in range(2):
+            sender = _fresh("C_PAYER")
+            _balance[sender] = round(random.uniform(40_000, 200_000), 2)
+            _pending.append((sender, receiver, _balance[sender] * random.uniform(0.85, 0.95)))
+    else:
+        sender = _fresh("C_PAYER")
+        balance = _balance[sender] = round(random.uniform(80_000, 300_000), 2)
+        for _ in range(2):
+            receiver = _fresh("C_NEWPAYEE")
+            _balance[receiver] = 0.0
+            amount = balance * random.uniform(0.28, 0.34)
+            _pending.append((sender, receiver, amount))
+            balance -= amount
+
+
 def generate_transaction() -> ScoreRequest:
-    """Mostly everyday traffic; fraud shows up as groups (a structuring
-    burst is sent over the following ticks, interleaved with nothing else)."""
+    """Mostly everyday traffic. Fraud (drains, structuring bursts) and
+    grey-zone pairs arrive as groups sent over the following ticks. Measured
+    over 800 transactions with the retrained model: 5% fraud, 13% grey-zone;
+    decisions 90% ALLOW, 5% REVIEW, 5% BLOCK."""
     if _pending:
         sender, receiver, amount = _pending.popleft()
         return _send(sender, receiver, amount)
     roll = random.random()
-    if roll < 0.85:
+    if roll < 0.87:
         return _normal_transaction()
-    if roll < 0.96:
+    if roll < 0.91:
         return _drain_transaction()
-    _queue_structuring()
+    if roll < 0.92:
+        _queue_structuring()
+    else:
+        _queue_ambiguous()
     return generate_transaction()
 
 

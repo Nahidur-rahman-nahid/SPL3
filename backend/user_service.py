@@ -44,11 +44,15 @@ def create_user(db: Session, username: str, email: str | None, role: str, create
     return user, temp_password
 
 
-def update_user(db: Session, user: models.User, role: str | None = None, is_active: bool | None = None) -> models.User:
+def update_user(
+    db: Session, user: models.User, role: str | None = None, is_active: bool | None = None, email: str | None = None
+) -> models.User:
     if role is not None:
         user.role = role
     if is_active is not None:
         user.is_active = is_active
+    if email is not None:
+        user.email = email.strip() or None
     db.commit()
     db.refresh(user)
     return user

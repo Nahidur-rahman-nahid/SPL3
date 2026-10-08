@@ -4,15 +4,16 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { changePassword } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useToast } from "@/components/Feedback";
 
 export default function AccountPage() {
   const router = useRouter();
+  const toast = useToast();
   const { user, refetch } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const forced = Boolean(user?.must_change_password);
@@ -32,7 +33,7 @@ export default function AccountPage() {
     try {
       await changePassword(currentPassword, newPassword);
       await refetch();
-      setSuccess(true);
+      toast.success("Password changed", forced ? "Taking you to the dashboard…" : undefined);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -90,7 +91,6 @@ export default function AccountPage() {
         />
 
         {error && <p className="text-sm text-rose-400 mb-4">{error}</p>}
-        {success && <p className="text-sm text-emerald-400 mb-4">Password changed.</p>}
 
         <button
           type="submit"

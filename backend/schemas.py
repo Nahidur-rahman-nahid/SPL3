@@ -1,9 +1,20 @@
-from datetime import datetime
-from typing import List, Literal, Optional
+from datetime import datetime, timezone
+from typing import Annotated, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 Role = Literal["ADMIN", "ANALYST"]
+
+
+def _as_utc(value: datetime) -> datetime:
+    # The database stores UTC but hands timestamps back without a timezone
+    # (SQLite always, Postgres for these columns). Sent as-is, the browser
+    # would read "18:27" as local time instead of 00:27 in Dhaka.
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+# Response timestamps: always serialized with an explicit UTC offset.
+UTCDateTime = Annotated[datetime, AfterValidator(_as_utc)]
 
 
 class LoginRequest(BaseModel):
@@ -18,8 +29,8 @@ class UserOut(BaseModel):
     role: Role
     is_active: bool
     must_change_password: bool
-    created_at: datetime
-    last_login_at: Optional[datetime] = None
+    created_at: UTCDateTime
+    last_login_at: Optional[UTCDateTime] = None
 
     class Config:
         from_attributes = True
@@ -39,6 +50,17 @@ class UserCreateOut(BaseModel):
 class UserUpdate(BaseModel):
     role: Optional[Role] = None
     is_active: Optional[bool] = None
+    # Where forgot-password links go; "" removes it.
+    email: Optional[str] = Field(default=None, max_length=254, pattern=r"^$|^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
+
+class ResetPasswordWithTokenRequest(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+    new_password: str = Field(min_length=8)
 
 
 class ChangePasswordRequest(BaseModel):
@@ -103,16 +125,17 @@ class FraudResultOut(BaseModel):
     sender_account: str
     receiver_account: str
     amount: float
+    transaction_type: Optional[str] = None
     fraud_probability: float
     decision: str
     risk_level: str
     explanation: Optional[dict] = None
-    decided_at: datetime
+    decided_at: UTCDateTime
     alert_id: Optional[int] = None
     acknowledged_by: Optional[str] = None
     is_false_positive: bool = False
     escalated: bool = False
-    escalated_at: Optional[datetime] = None
+    escalated_at: Optional[UTCDateTime] = None
 
     class Config:
         from_attributes = True
@@ -175,6 +198,11 @@ class PatternInfo(BaseModel):
     signal: str
     lookalike_title: str
     lookalike_summary: str
+    # Plain-language story for the demo page.
+    how: List[str] = []
+    why_hidden: str = ""
+    why_caught: str = ""
+    lookalike_why: str = ""
 
 
 class PatternList(BaseModel):

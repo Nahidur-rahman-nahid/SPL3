@@ -2,27 +2,35 @@
 
 import { useState } from "react";
 import { deleteTransactions } from "@/lib/api";
+import { useConfirm, useToast } from "@/components/Feedback";
 
 // Admin-only bulk delete for the row checkboxes in LiveFeed / AlertQueue.
 // Hard delete on the backend (transaction + decisions + alerts), so it asks
 // for confirmation first.
 export default function DeleteSelectedButton({ selectedIds, onDeleted }) {
   const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState("");
+  const confirm = useConfirm();
+  const toast = useToast();
   const count = selectedIds.length;
 
   async function handleDelete() {
     const noun = count === 1 ? "transaction" : "transactions";
-    if (!window.confirm(`Permanently delete ${count} ${noun}, with their decisions and alerts? This cannot be undone.`)) {
-      return;
-    }
+    const ok = await confirm({
+      title: `Delete ${count} ${noun}?`,
+      message: "Their decisions and alerts are deleted too. This cannot be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     setDeleting(true);
-    setError("");
     try {
-      await deleteTransactions(selectedIds);
+      const result = await deleteTransactions(selectedIds);
       onDeleted(selectedIds);
+      toast.success(
+        `Deleted ${result.deleted_transactions} ${result.deleted_transactions === 1 ? "transaction" : "transactions"}`,
+        `${result.deleted_decisions} decisions and ${result.deleted_alerts} alerts removed.`
+      );
     } catch (err) {
-      setError(err.message || "Delete failed.");
+      toast.error("Delete failed", err.message || "Please try again.");
     } finally {
       setDeleting(false);
     }
@@ -32,7 +40,6 @@ export default function DeleteSelectedButton({ selectedIds, onDeleted }) {
 
   return (
     <span className="flex items-center gap-2">
-      {error && <span className="text-xs text-rose-400">{error}</span>}
       <button
         onClick={handleDelete}
         disabled={deleting}

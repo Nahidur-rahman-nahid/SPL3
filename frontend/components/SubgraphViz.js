@@ -12,11 +12,17 @@ const NEIGHBOUR_RADIUS = 110;
 const CENTER_NODE_R = 28;
 const NEIGHBOUR_NODE_R = 16;
 
+// CSS variables (not hex), so the graph follows the light / dark theme.
+// SVG attributes don't accept var(), hence the style={{...}} below.
 const DECISION_COLORS = {
-  ALLOW: "#34d399", // emerald-400
-  REVIEW: "#fbbf24", // amber-400
-  BLOCK: "#fb7185", // rose-400
+  ALLOW: "var(--color-emerald-400)",
+  REVIEW: "var(--color-amber-400)",
+  BLOCK: "var(--color-rose-400)",
 };
+
+// Past this many neighbours the per-node labels would overlap: nodes shrink
+// to fit the ring and the figures move to the hover tooltip only.
+const MAX_LABELLED = 12;
 
 export default function SubgraphViz({ center, neighbours, decision }) {
   if (!neighbours || neighbours.length === 0) {
@@ -27,8 +33,12 @@ export default function SubgraphViz({ center, neighbours, decision }) {
     );
   }
 
-  const centerColor = DECISION_COLORS[decision] || "#94a3b8";
+  const centerColor = DECISION_COLORS[decision] || "var(--color-slate-400)";
   const n = neighbours.length;
+  const labelled = n <= MAX_LABELLED;
+  // Space each node gets on the ring, so crowded rings don't overlap.
+  const nodeR = Math.max(5, Math.min(NEIGHBOUR_NODE_R, (Math.PI * NEIGHBOUR_RADIUS) / n - 2));
+  const priorShown = neighbours.some((nb) => nb.prior_decision);
 
   const positions = neighbours.map((_, i) => {
     const angle = (2 * Math.PI * i) / n - Math.PI / 2; // start at top, go clockwise
@@ -49,7 +59,7 @@ export default function SubgraphViz({ center, neighbours, decision }) {
             y1={CENTER}
             x2={p.x}
             y2={p.y}
-            stroke="#475569"
+            style={{ stroke: "var(--color-slate-600)" }}
             strokeWidth="1.5"
           />
         ))}
@@ -60,15 +70,21 @@ export default function SubgraphViz({ center, neighbours, decision }) {
         {positions.map((p, i) => (
           <g key={neighbours[i].transaction_id} className="cursor-default">
             <title>
-              {`${neighbours[i].edge_type ? neighbours[i].edge_type + " · " : ""}${neighbours[i].type} · amount ${Number(neighbours[i].amount).toLocaleString()} · step ${neighbours[i].step}`}
+              {`${neighbours[i].edge_type ? neighbours[i].edge_type + " · " : ""}${neighbours[i].type} · amount ${Number(neighbours[i].amount).toLocaleString()}${neighbours[i].step != null ? ` · step ${neighbours[i].step}` : ""}${neighbours[i].prior_decision ? ` · was ${neighbours[i].prior_decision}` : ""}`}
             </title>
-            <circle cx={p.x} cy={p.y} r={NEIGHBOUR_NODE_R} fill="#1e293b" stroke="#64748b" strokeWidth="1.5" />
-            <text x={p.x} y={p.y + 4} textAnchor="middle" fontSize="9" fill="#cbd5e1">
-              {neighbours[i].type === "CASH_OUT" ? "CO" : "TR"}
-            </text>
-            <text x={p.x} y={p.y + NEIGHBOUR_NODE_R + 13} textAnchor="middle" fontSize="9" fill="#64748b">
-              {Number(neighbours[i].amount).toLocaleString()}
-            </text>
+            {/* outline = the decision this neighbour itself got when it was scored */}
+            <circle cx={p.x} cy={p.y} r={nodeR} strokeWidth="1.5"
+              style={{ fill: "var(--color-slate-800)", stroke: DECISION_COLORS[neighbours[i].prior_decision] || "var(--color-slate-500)" }} />
+            {nodeR >= 12 && (
+              <text x={p.x} y={p.y + 4} textAnchor="middle" fontSize="9" style={{ fill: "var(--color-slate-300)" }}>
+                {neighbours[i].type === "CASH_OUT" ? "CO" : "TR"}
+              </text>
+            )}
+            {labelled && (
+              <text x={p.x} y={p.y + nodeR + 13} textAnchor="middle" fontSize="9" style={{ fill: "var(--color-slate-500)" }}>
+                {Number(neighbours[i].amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </text>
+            )}
           </g>
         ))}
 
@@ -81,11 +97,11 @@ export default function SubgraphViz({ center, neighbours, decision }) {
           <title>
             {`${center?.type || "transaction"} · amount ${center?.amount != null ? Number(center.amount).toLocaleString() : "?"} · ${decision}`}
           </title>
-          <circle cx={CENTER} cy={CENTER} r={CENTER_NODE_R} fill={centerColor} fillOpacity="0.15" stroke={centerColor} strokeWidth="2.5" />
-          <text x={CENTER} y={CENTER + 4} textAnchor="middle" fontSize="12" fontWeight="600" fill={centerColor}>
+          <circle cx={CENTER} cy={CENTER} r={CENTER_NODE_R} fillOpacity="0.15" strokeWidth="2.5" style={{ fill: centerColor, stroke: centerColor }} />
+          <text x={CENTER} y={CENTER + 4} textAnchor="middle" fontSize="12" fontWeight="600" style={{ fill: centerColor }}>
             {center?.type === "CASH_OUT" ? "CO" : "TR"}
           </text>
-          <text x={CENTER} y={CENTER + CENTER_NODE_R + 16} textAnchor="middle" fontSize="11" fontWeight="600" fill={centerColor}>
+          <text x={CENTER} y={CENTER + CENTER_NODE_R + 16} textAnchor="middle" fontSize="11" fontWeight="600" style={{ fill: centerColor }}>
             {decision}
           </text>
         </g>
@@ -93,6 +109,19 @@ export default function SubgraphViz({ center, neighbours, decision }) {
       <p className="text-center text-xs text-slate-500 mt-1">
         the actual subgraph scored — {n} related transaction{n === 1 ? "" : "s"} connected to this one · hover a node for exact figures
       </p>
+      {priorShown && (
+        <div className="text-center text-[11px] text-slate-500 mt-2">
+          <p>node outline = that transaction&apos;s own earlier decision</p>
+          <p className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+            {Object.entries(DECISION_COLORS).map(([label, color]) => (
+              <span key={label} className="inline-flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full border-2" style={{ borderColor: color }} />
+                {label}
+              </span>
+            ))}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { getPurgePreview, purgeTransactions } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useConfirm, useToast } from "@/components/Feedback";
 
 // Bulk removal of dummy/demo data (stream simulator output, manual test
 // scores). Hard delete — transactions, their decisions and alerts — see
@@ -36,8 +37,9 @@ export default function DataCleanupPage() {
   const [count, setCount] = useState(null);
   const [loadingCount, setLoadingCount] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const confirm = useConfirm();
+  const toast = useToast();
 
   const loadCount = useCallback(async () => {
     setLoadingCount(true);
@@ -72,18 +74,23 @@ export default function DataCleanupPage() {
 
   async function handlePurge() {
     const sourceLabel = SOURCES.find((s) => s.key === source).label.toLowerCase();
-    const ageLabel = age === "any" ? "" : ` (${AGES.find((a) => a.key === age).label.toLowerCase()})`;
-    if (!window.confirm(`Permanently delete ${count} transactions — ${sourceLabel}${ageLabel} — with their decisions and alerts? This cannot be undone.`)) {
-      return;
-    }
+    const ageLabel = age === "any" ? "" : `, ${AGES.find((a) => a.key === age).label.toLowerCase()}`;
+    const ok = await confirm({
+      title: `Delete ${count.toLocaleString()} ${count === 1 ? "transaction" : "transactions"}?`,
+      message: `All ${sourceLabel}${ageLabel}, with their decisions and alerts. This cannot be undone.`,
+      confirmLabel: "Delete permanently",
+    });
+    if (!ok) return;
     setDeleting(true);
-    setError("");
-    setResult(null);
     try {
-      setResult(await purgeTransactions(source, cutoffFor(age)));
+      const result = await purgeTransactions(source, cutoffFor(age));
+      toast.success(
+        `Deleted ${result.deleted_transactions.toLocaleString()} transactions`,
+        `${result.deleted_decisions.toLocaleString()} decisions and ${result.deleted_alerts.toLocaleString()} alerts removed.`
+      );
       await loadCount();
     } catch (err) {
-      setError(err.message || "Delete failed.");
+      toast.error("Delete failed", err.message || "Please try again.");
     } finally {
       setDeleting(false);
     }
@@ -158,12 +165,6 @@ export default function DataCleanupPage() {
         </div>
 
         {error && <p className="text-sm text-rose-400">{error}</p>}
-        {result && (
-          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-4 py-3 text-sm text-emerald-300">
-            Deleted {result.deleted_transactions.toLocaleString()} transactions, {result.deleted_decisions.toLocaleString()} decisions
-            and {result.deleted_alerts.toLocaleString()} alerts.
-          </div>
-        )}
 
         <p className="text-xs text-slate-500">
           To delete specific transactions instead, tick their checkboxes on the dashboard&apos;s live feed or in the alerts

@@ -61,6 +61,20 @@ class RefreshToken(Base):
     created_at = Column(DateTime, nullable=False, default=utcnow)
 
 
+class PasswordResetToken(Base):
+    """One emailed "forgot password" link. Only the hash of the token is
+    stored; the link works once (used_at) and only until expires_at."""
+
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String, nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
 

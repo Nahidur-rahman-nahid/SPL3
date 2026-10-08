@@ -2,6 +2,9 @@
 const BACKEND = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
 const nextConfig = {
+  // The end-to-end tests (e2e/) build into their own folder so they never
+  // touch the .next folder a running dev server is using.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   // Proxy all backend calls through Next.js so the browser sees everything
   // as same-origin (localhost:3000). This makes SameSite=lax cookies work
   // without needing HTTPS or SameSite=none.

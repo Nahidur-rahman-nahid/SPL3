@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { getStats } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import ThemeToggle from "@/components/ThemeToggle";
 
 // The one navbar for every signed-in page (rendered by the (protected)
 // layout). Main pages in the middle, admin-only tools grouped under an
@@ -54,15 +56,6 @@ function useDismiss(open, onClose) {
     };
   }, [open, onClose]);
   return ref;
-}
-
-function ShieldIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z" />
-      <path d="M9 12l2 2 4-4" />
-    </svg>
-  );
 }
 
 function Chevron({ open }) {
@@ -153,10 +146,8 @@ export default function AppNavbar() {
           are equal width (1fr each), so the links sit in the true centre. */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 grid grid-cols-[1fr_auto_1fr] items-center h-16">
         <Link href="/dashboard" className="justify-self-start flex items-center gap-2 text-white">
-          <span className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
-            <ShieldIcon />
-          </span>
-          <span className="font-semibold tracking-tight">FraudGNN</span>
+          <Image src="/fraudscope-icon.svg" alt="" width={32} height={32} priority />
+          <span className="font-semibold tracking-tight">FraudScope</span>
         </Link>
 
         {/* Desktop links */}
@@ -197,6 +188,7 @@ export default function AppNavbar() {
         </div>
 
         <div className="col-start-3 justify-self-end flex items-center gap-2">
+          <ThemeToggle />
           {/* Account menu */}
           <div ref={accountRef} className="relative">
             <button

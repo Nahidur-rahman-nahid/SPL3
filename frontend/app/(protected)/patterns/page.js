@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getPatterns, runPattern } from "@/lib/api";
+import PatternGraph, { accountLabel } from "@/components/PatternGraph";
 
 // Fraud Patterns demo: replays each injected fraud pattern — and its
 // legitimate look-alike — through the real scoring pipeline one
@@ -65,7 +66,30 @@ function StepRow({ step }) {
   );
 }
 
-function RunColumn({ tone, title, summary, result, shown, running, onRun, disabled }) {
+// One sentence about the transaction just revealed, so the build-up can be
+// followed without reading the numbers.
+function Narration({ step }) {
+  if (!step) return null;
+  const linked = step.neighbour_count;
+  const graphLift = step.probability - step.alone_probability;
+  return (
+    <p className="mt-3 rounded-md bg-slate-950/60 border border-slate-800 px-3 py-2 text-xs text-slate-300 leading-relaxed">
+      <span className="text-slate-500">Step {step.index}: </span>
+      {accountLabel(step.sender)} → {accountLabel(step.receiver)},{" "}
+      {step.type === "CASH_OUT" ? "cash-out" : "transfer"} of BDT{" "}
+      {step.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}.{" "}
+      {linked
+        ? `The system found ${linked} related transaction${linked === 1 ? "" : "s"} → `
+        : "No related transactions yet → "}
+      <span className={step.decision === "ALLOW" ? "text-emerald-400" : step.decision === "REVIEW" ? "text-amber-400" : "text-rose-400"}>
+        {pct(step.probability)} {step.decision}
+      </span>
+      {linked > 0 && graphLift >= 0.2 && <span className="text-slate-400">; on its own it would score only {pct(step.alone_probability)}</span>}.
+    </p>
+  );
+}
+
+function RunColumn({ tone, title, summary, why, result, shown, running, onRun, disabled }) {
   const accent = tone === "fraud" ? "border-rose-500/40" : "border-emerald-500/40";
   const steps = result ? result.steps.slice(0, shown) : [];
   const done = result && shown >= result.steps.length;
@@ -79,6 +103,7 @@ function RunColumn({ tone, title, summary, result, shown, running, onRun, disabl
           </p>
           <h3 className="text-sm font-medium text-white mt-0.5">{title}</h3>
           <p className="text-xs text-slate-500 mt-1">{summary}</p>
+          {why && <p className="text-xs text-emerald-400/80 mt-1">{why}</p>}
         </div>
         <button
           onClick={onRun}
@@ -114,14 +139,16 @@ function RunColumn({ tone, title, summary, result, shown, running, onRun, disabl
         </p>
       )}
 
+      <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/40 p-2">
+        <PatternGraph allSteps={result?.steps} shown={shown} />
+      </div>
+      <Narration step={steps[steps.length - 1]} />
+
       <ul className="mt-2">
         {steps.map((s) => (
           <StepRow key={s.transaction_id} step={s} />
         ))}
       </ul>
-      {!result && !running && (
-        <p className="mt-6 mb-4 text-center text-xs text-slate-600">Press Run to send these transactions through the live system.</p>
-      )}
     </div>
   );
 }
@@ -220,7 +247,29 @@ export default function PatternsPage() {
               system found, and <span className="text-slate-400">alone</span> is the score the same transaction would
               get with no neighbours.
             </div>
-            <div className="grid gap-4 lg:grid-cols-2">
+            {selected.how?.length > 0 && (
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+                  <p className="text-[11px] uppercase tracking-wider text-rose-400 mb-2">1 · What the fraudster does</p>
+                  <ol className="space-y-1.5 text-xs text-slate-300 leading-relaxed list-decimal list-inside">
+                    {selected.how.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ol>
+                </div>
+                <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+                  <p className="text-[11px] uppercase tracking-wider text-amber-400 mb-2">2 · Why one transaction looks normal</p>
+                  <p className="text-xs text-slate-300 leading-relaxed">{selected.why_hidden}</p>
+                  <p className="text-xs text-slate-500 mt-2">A model that checks each transaction alone (like XGBoost) has nothing else to go on.</p>
+                </div>
+                <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+                  <p className="text-[11px] uppercase tracking-wider text-emerald-400 mb-2">3 · Why the GNN catches it</p>
+                  <p className="text-xs text-slate-300 leading-relaxed">{selected.why_caught}</p>
+                  <p className="text-xs text-slate-500 mt-2">Watch the graphs below: the fraud arrows join into one group, the look-alike never does.</p>
+                </div>
+              </div>
+            )}
+            <div className="grid gap-4 lg:grid-cols-2" data-role="run-columns">
               {["fraud", "lookalike"].map((variant) => {
                 const key = `${selected.id}:${variant}`;
                 return (
@@ -229,6 +278,7 @@ export default function PatternsPage() {
                     tone={variant}
                     title={variant === "fraud" ? selected.title : selected.lookalike_title}
                     summary={variant === "fraud" ? selected.summary : selected.lookalike_summary}
+                    why={variant === "fraud" ? null : selected.lookalike_why}
                     result={results[key]}
                     shown={shown[key] ?? 0}
                     running={running === key}

@@ -71,3 +71,28 @@ def test_everyday_traffic_is_the_majority_and_uses_recurring_accounts():
     family = [r for r in everyday if r.receiver_account.startswith("C_FAMILY")]
     # each customer always pays the same relative
     assert all(len({r.receiver_account for r in family if r.sender_account == c}) <= 1 for c in sim.CUSTOMERS)
+
+
+# SS-06
+def test_ambiguous_pairs():
+    pooled = new_payees = 0
+    for _ in range(40):
+        sim._pending.clear()
+        sim._queue_ambiguous()
+        pair = [sim.generate_transaction() for _ in range(2)]
+        assert not sim._pending
+        if pair[0].receiver_account == pair[1].receiver_account:  # pooled money
+            pooled += 1
+            assert pair[0].sender_account != pair[1].sender_account
+            assert all(0.85 <= r.features.amount / r.features.oldbalanceOrg <= 0.95 for r in pair)
+        else:  # one payer, two brand-new payees
+            new_payees += 1
+            assert pair[0].sender_account == pair[1].sender_account
+            assert all(r.features.oldbalanceDest == 0 for r in pair)
+            assert all(0.28 <= r.features.amount / r.features.oldbalanceOrg <= 0.34 for r in pair)
+    assert pooled and new_payees
+
+
+# SS-07
+def test_step_is_fixed():
+    assert {r.features.step for r in generate(50)} == {sim.STREAM_STEP}

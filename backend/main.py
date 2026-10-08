@@ -28,14 +28,16 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+import email_service
 import escalation
 import ml_service
 import models
+import password_reset
 import pattern_demo
 import schemas
 import stream_simulator
@@ -172,6 +174,29 @@ def change_password(
     return {"status": "password_changed"}
 
 
+FORGOT_PASSWORD_REPLY = {"detail": "If an account uses that email, a reset link has been sent to it."}
+
+
+@app.post("/auth/forgot-password")
+def forgot_password(
+    payload: schemas.ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    # Same reply, and the email is sent after the response, whether or not
+    # the address exists — so the answer can't be used to find accounts.
+    for to, subject, text, html in password_reset.request_reset(db, payload.email):
+        background_tasks.add_task(email_service.send_email, to, subject, text, html)
+    return FORGOT_PASSWORD_REPLY
+
+
+@app.post("/auth/reset-password")
+def reset_password_with_token(payload: schemas.ResetPasswordWithTokenRequest, db: Session = Depends(get_db)):
+    if not password_reset.reset_password(db, payload.token, payload.new_password):
+        raise HTTPException(status_code=400, detail="This reset link is invalid or has expired. Request a new one.")
+    return {"status": "password_reset"}
+
+
 @app.post("/auth/users", response_model=schemas.UserCreateOut, dependencies=[Depends(require_csrf)])
 def create_user(
     payload: schemas.UserCreate,
@@ -199,7 +224,7 @@ def update_user(
     target = user_service.get_user_by_id(db, user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
-    return user_service.update_user(db, target, role=payload.role, is_active=payload.is_active)
+    return user_service.update_user(db, target, role=payload.role, is_active=payload.is_active, email=payload.email)
 
 
 @app.post("/auth/users/{user_id}/reset-password", response_model=schemas.ResetPasswordResponse, dependencies=[Depends(require_csrf)])
@@ -316,6 +341,7 @@ def get_results(
             sender_account=txn.sender_account,
             receiver_account=txn.receiver_account,
             amount=txn.amount,
+            transaction_type=txn.transaction_type,
             fraud_probability=decision.fraud_probability,
             decision=decision.decision,
             risk_level=decision.risk_level,

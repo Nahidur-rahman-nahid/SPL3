@@ -1,10 +1,5 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -12,17 +7,68 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ------------------------------------------------------------------ theme
+   The app is designed dark: pages use slate-950/900/800 surfaces and
+   white / slate-300…500 text. <html data-theme="…"> is set before first
+   paint by the script in app/layout.js (saved choice, else the system
+   setting) and switched by components/ThemeToggle.js.
+
+   Light mode does NOT need a light: variant on every class. Tailwind v4
+   colours are CSS variables, so the slate scale is simply mirrored here:
+   the dark surfaces become light ones and light text becomes dark. Accent
+   400/300/200 shades (made for dark backgrounds) are swapped for deeper ones
+   so they stay readable on white. */
+:root,
+:root[data-theme="dark"] {
+  --background: #020617;
+  --foreground: #f1f5f9;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --background: #f1f5f9;
+  --foreground: #0f172a;
+  color-scheme: light;
+
+  --color-slate-950: oklch(96.8% 0.007 247.896); /* page background */
+  --color-slate-900: #ffffff; /* cards */
+  --color-slate-800: oklch(92.9% 0.013 255.508); /* borders, inputs */
+  --color-slate-700: oklch(86.9% 0.022 252.894);
+  --color-slate-600: oklch(70.4% 0.04 256.788);
+  --color-slate-500: oklch(55.4% 0.046 257.417);
+  --color-slate-400: oklch(44.6% 0.043 257.281);
+  --color-slate-300: oklch(37.2% 0.044 257.287);
+  --color-slate-200: oklch(27.9% 0.041 260.031);
+  --color-slate-100: oklch(20.8% 0.042 265.755);
+  --color-white: oklch(20.8% 0.042 265.755); /* "text-white" headings */
+
+  --color-emerald-200: oklch(43.2% 0.095 166.913);
+  --color-emerald-300: oklch(43.2% 0.095 166.913);
+  --color-emerald-400: oklch(50.8% 0.118 165.612);
+  --color-amber-200: oklch(47.3% 0.137 46.201);
+  --color-amber-300: oklch(47.3% 0.137 46.201);
+  --color-amber-400: oklch(55.5% 0.163 48.998);
+  --color-rose-300: oklch(45.5% 0.188 13.697);
+  --color-rose-400: oklch(51.4% 0.222 16.935);
+  --color-indigo-300: oklch(39.8% 0.195 277.366);
+  --color-indigo-400: oklch(45.7% 0.24 277.023);
+  --color-sky-400: oklch(50% 0.134 242.749);
+  --color-violet-400: oklch(49.1% 0.27 292.581);
+}
+
+/* White text on solid coloured buttons and badges stays white. */
+:root[data-theme="light"] :is(
+  .bg-indigo-600, .bg-indigo-500, .bg-rose-600, .bg-rose-500,
+  .bg-emerald-600, .bg-emerald-500, .from-indigo-500
+) {
+  --color-white: #ffffff;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  transition: background-color 0.2s ease;
 }
 
 /* Plays once when a NEW element mounts (e.g. a fresh live-stream event card) —
@@ -41,4 +87,42 @@ body {
 
 .animate-slide-in {
   animation: slide-in-fade 0.35s ease-out;
+}
+
+/* Toasts and the confirmation dialog (components/Feedback.js). */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.toast-in {
+  animation: toast-in 0.2s ease-out;
+}
+
+.dialog-in {
+  animation: dialog-in 0.15s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-in,
+  .dialog-in {
+    animation: none;
+  }
 }

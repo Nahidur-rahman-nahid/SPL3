@@ -14,6 +14,10 @@ _TEST_DB = Path(tempfile.gettempdir()) / "spl3_test_fraud.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB.as_posix()}"
 os.environ["REDIS_URL"] = "redis://localhost:6399/0"  # never contacted — fakeredis is injected
 os.environ["STREAM_ENABLED"] = "False"
+# TestClient talks plain http://testserver: cookies must not be Secure-only.
+os.environ["COOKIE_SECURE"] = "False"
+os.environ["COOKIE_SAMESITE"] = "lax"
+os.environ["CORS_ORIGINS"] = "http://localhost:3000"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { acknowledgeAlert, buildAlertsSocketUrl, getResults } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import DeleteSelectedButton from "@/components/DeleteSelectedButton";
+import SubgraphViz from "@/components/SubgraphViz";
 
 // This page is the Alert & Decision Engine surfaced as its own feature —
 // everything here is downstream of a probability ml_service.py already
@@ -32,10 +33,15 @@ const TABS = [
 const MAX_ROWS = 100;
 const RECONNECT_DELAY_MS = 3000;
 
+// Percentage points the score drops when this one neighbour is left out.
+// Two decimals; three when it is that small, so a tiny non-zero effect
+// never shows as a misleading "0.0".
 function formatContribution(value) {
   if (value === null || value === undefined) return "—";
-  const pct = (value * 100).toFixed(1);
-  return value > 0 ? `+${pct}pp` : `${pct}pp`;
+  const pp = value * 100;
+  const digits = pp !== 0 && Math.abs(pp) < 0.01 ? 3 : 2;
+  const text = pp.toFixed(digits);
+  return pp > 0 ? `+${text}pp` : `${text}pp`;
 }
 
 export default function AlertQueue() {
@@ -273,6 +279,8 @@ export default function AlertQueue() {
                 <div className="px-4 pb-4 bg-slate-950/50">
                   <p className="text-sm text-slate-300 mb-3">{r.explanation?.summary || "No explanation recorded."}</p>
 
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
+                  <div className="min-w-0">
                   {r.explanation?.neighbours?.length > 0 && (
                     <div className="overflow-x-auto mb-3">
                       <table className="w-full text-xs">
@@ -293,7 +301,9 @@ export default function AlertQueue() {
                               </td>
                               <td className="py-1.5 pr-3 text-slate-300">{n.type}</td>
                               <td className="py-1.5 pr-3 text-right text-slate-300 tabular-nums">{Number(n.amount).toLocaleString()}</td>
-                              <td className={`py-1.5 pr-3 text-right tabular-nums ${(n.contribution || 0) > 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                              <td className={`py-1.5 pr-3 text-right tabular-nums ${
+                                (n.contribution || 0) > 0 ? "text-rose-400" : n.contribution < 0 ? "text-emerald-400" : "text-slate-400"
+                              }`}>
                                 {formatContribution(n.contribution)}
                               </td>
                               <td className="py-1.5">
@@ -328,6 +338,16 @@ export default function AlertQueue() {
                       </button>
                     </div>
                   )}
+                  </div>
+
+                  <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                    <SubgraphViz
+                      center={{ type: r.transaction_type, amount: r.amount }}
+                      neighbours={r.explanation?.neighbours}
+                      decision={r.decision}
+                    />
+                  </div>
+                  </div>
                 </div>
               )}
             </div>

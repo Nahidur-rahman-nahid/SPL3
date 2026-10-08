@@ -143,6 +143,14 @@ PATTERNS = {
         "lookalike": _shared_payees,
         "lookalike_title": "Tenants paying one landlord",
         "lookalike_summary": "8 people pay the same established landlord a normal rent — a legit fan-in.",
+        "how": [
+            "A fraudster opens a fresh 'mule' account with no money in it.",
+            "Victims are tricked (fake prize, OTP scam) into sending their whole balance to that one account.",
+            "Within hours the mule cashes everything out at an agent.",
+        ],
+        "why_hidden": "One full-balance transfer to a new account also happens in real life — moving savings, paying for land.",
+        "why_caught": "The mule's SAME_RECEIVER neighbours are all full drains from different people. The GNN sees the fan-in, not just one row.",
+        "lookalike_why": "Tenants also all pay one account, but the landlord is long-established and each tenant pays only a small part of their balance.",
     },
     "STRUCTURING": {
         "title": "Structuring",
@@ -152,6 +160,14 @@ PATTERNS = {
         "lookalike": _isolated_copy(_structuring),
         "lookalike_title": "Same transfers, unrelated people",
         "lookalike_summary": "Exactly the same 4 transfers, each by a different person — one rent payment each.",
+        "how": [
+            "Someone needs to move about BDT 1.9 lakh, but the Bangladesh Bank daily limit is 50,000.",
+            "They split it into 4 transfers of 46,900–49,100 within a couple of hours.",
+            "Each transfer stays just under the limit, so no rule ever fires.",
+        ],
+        "why_hidden": "A single 48,200 transfer is an ordinary rent or tuition payment.",
+        "why_caught": "Its SAME_SENDER neighbours are near-limit transfers back to back. The repeated just-below-limit shape only exists in the group.",
+        "lookalike_why": "The same four amounts sent by four unrelated people have no related transactions, so each is judged alone and stays low.",
     },
     "SMURF_FANOUT": {
         "title": "Smurfing fan-out",
@@ -161,6 +177,14 @@ PATTERNS = {
         "lookalike": _isolated_copy(_smurf_fanout),
         "lookalike_title": "Same transfers, unrelated people",
         "lookalike_summary": "Exactly the same 10 transfers, each by a different person to a different new payee.",
+        "how": [
+            "A launderer holds a large sum in one account.",
+            "They spread most of it over 10 brand-new, empty accounts ('smurfs') within hours.",
+            "Each smurf later withdraws a small, unremarkable amount.",
+        ],
+        "why_hidden": "One transfer of about 50,000 to a new payee is perfectly normal.",
+        "why_caught": "SAME_SENDER fan-out to accounts that were all empty before — the placement / layering step of money laundering.",
+        "lookalike_why": "Ten different people each paying one new payee are unrelated; nothing links the transfers together.",
     },
     "AGENT_COLLUSION": {
         "title": "Agent collusion",
@@ -170,6 +194,14 @@ PATTERNS = {
         "lookalike": _isolated_copy(_agent_collusion),
         "lookalike_title": "Same cash-outs, different agents",
         "lookalike_summary": "Exactly the same 12 cash-outs, each at a different agent.",
+        "how": [
+            "A dishonest agent works together with a fraud ring.",
+            "12 nearly empty accounts are topped up with stolen money.",
+            "Every one of them cashes out everything at that same agent.",
+        ],
+        "why_hidden": "Cashing out your whole small balance is something many ordinary customers do.",
+        "why_caught": "The agent's SAME_RECEIVER neighbours are full cash-outs from near-empty accounts — a collusion hub.",
+        "lookalike_why": "The same cash-outs spread over 12 different agents look like 12 ordinary customers.",
     },
     "ACCOUNT_TAKEOVER": {
         "title": "Account takeover",
@@ -179,6 +211,14 @@ PATTERNS = {
         "lookalike": _isolated_copy(_account_takeover),
         "lookalike_title": "Same payments, unrelated people",
         "lookalike_summary": "Exactly the same 7 payments, each by a different person.",
+        "how": [
+            "The owner makes a few small, normal payments.",
+            "A fraudster steals the PIN or OTP (SIM swap, phishing call).",
+            "Within minutes the account sends almost everything left to 4 brand-new accounts.",
+        ],
+        "why_hidden": "Each burst transfer is only about a quarter of the balance — not alarming on its own.",
+        "why_caught": "A sudden SAME_SENDER burst to new accounts right after normal history. The model flags it from the first burst transfer.",
+        "lookalike_why": "The same 7 payments made by 7 different people have no history to break away from.",
     },
     "MULE_NETWORK": {
         "title": "Mule network",
@@ -188,6 +228,14 @@ PATTERNS = {
         "lookalike": _isolated_copy(_mule_network),
         "lookalike_title": "Same transfers, unrelated people",
         "lookalike_summary": "Exactly the same 12 transfers, each between two unrelated accounts.",
+        "how": [
+            "A ring controls 4 fresh mule accounts.",
+            "6 victims each send about 22% of their balance to two of the mules.",
+            "No victim is drained, so every single transfer looks partial and normal.",
+        ],
+        "why_hidden": "Sending 22% of your balance to a new contact is ordinary.",
+        "why_caught": "Victims and mules form a dense web: shared senders and shared receivers, two hops deep. The GNN combines both kinds of link.",
+        "lookalike_why": "The same 12 transfers between unrelated pairs form no web at all.",
     },
 }
 
@@ -197,7 +245,9 @@ def list_patterns() -> dict:
         "model": ml_service.model_info(),
         "patterns": [
             {"id": pid, "title": p["title"], "summary": p["summary"], "signal": p["signal"],
-             "lookalike_title": p["lookalike_title"], "lookalike_summary": p["lookalike_summary"]}
+             "lookalike_title": p["lookalike_title"], "lookalike_summary": p["lookalike_summary"],
+             "how": p["how"], "why_hidden": p["why_hidden"], "why_caught": p["why_caught"],
+             "lookalike_why": p["lookalike_why"]}
             for pid, p in PATTERNS.items()
         ],
     }

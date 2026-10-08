@@ -45,6 +45,26 @@ class Settings(BaseSettings):
     LOGIN_MAX_ATTEMPTS: int = 5
     LOGIN_LOCKOUT_MINUTES: float = 15.0
 
+    # Forgot-password emails (password_reset.py, email_service.py). The link
+    # points at the frontend's /reset-password page and works once, for
+    # PASSWORD_RESET_TOKEN_MINUTES. At most PASSWORD_RESET_MAX_REQUESTS emails
+    # per address per PASSWORD_RESET_WINDOW_MINUTES.
+    FRONTEND_BASE_URL: str = "http://localhost:3000"
+    PASSWORD_RESET_TOKEN_MINUTES: int = 30
+    PASSWORD_RESET_MAX_REQUESTS: int = 3
+    PASSWORD_RESET_WINDOW_MINUTES: float = 15.0
+
+    # Outgoing mail. With SMTP_HOST empty, nothing is sent and the reset link
+    # is written to the server log instead (local development). Gmail:
+    # SMTP_HOST=smtp.gmail.com, SMTP_PORT=587, SMTP_USERNAME=<address>,
+    # SMTP_PASSWORD=<16-character app password>.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""  # defaults to SMTP_USERNAME
+    SMTP_USE_TLS: bool = True  # STARTTLS on port 587
+
     # Database — defaults to a local SQLite file so you can run this with zero
     # setup. Point DATABASE_URL at Postgres (e.g. from Render) for production:
     # postgresql://user:password@host:5432/dbname
