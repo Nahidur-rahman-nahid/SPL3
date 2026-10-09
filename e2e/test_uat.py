@@ -204,7 +204,7 @@ def test_09_alert_review_and_acknowledge(admin, shot):
     rows.first.click()
     expect(page.get_by_text("Linked to").first).to_be_visible()
     expect(page.get_by_text("the actual subgraph scored")).to_be_visible()  # graph beside the table
-    expect(page.get_by_text(re.compile(r"[+-]\d+\.\d{2,3}pp")).first).to_be_visible()  # 2-3 decimals
+    expect(page.get_by_text(re.compile(r"[+\-≈] ?\d+\.\d{2,3}pp")).first).to_be_visible()  # 2-3 decimals
     shot(page, "alert_expanded_explanation")
 
     page.get_by_role("button", name="Acknowledge").first.click()

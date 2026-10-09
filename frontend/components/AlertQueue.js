@@ -33,6 +33,14 @@ const TABS = [
 const MAX_ROWS = 100;
 const RECONNECT_DELAY_MS = 3000;
 
+// Below this a neighbour has no real effect (0.05 percentage points): shown
+// grey as "≈ 0.00pp" so a +/- sign on rounding noise is never read as evidence.
+const NEGLIGIBLE_PP = 0.05;
+
+function isNegligible(value) {
+  return value !== null && value !== undefined && Math.abs(value * 100) < NEGLIGIBLE_PP;
+}
+
 // Percentage points the score drops when this one neighbour is left out.
 // Two decimals; three when it is that small, so a tiny non-zero effect
 // never shows as a misleading "0.0".
@@ -41,7 +49,13 @@ function formatContribution(value) {
   const pp = value * 100;
   const digits = pp !== 0 && Math.abs(pp) < 0.01 ? 3 : 2;
   const text = pp.toFixed(digits);
+  if (isNegligible(value)) return `≈ ${Math.abs(pp).toFixed(digits)}pp`;
   return pp > 0 ? `+${text}pp` : `${text}pp`;
+}
+
+function contributionColour(value) {
+  if (isNegligible(value) || !value) return "text-slate-400";
+  return value > 0 ? "text-rose-400" : "text-emerald-400";
 }
 
 export default function AlertQueue() {
@@ -301,9 +315,7 @@ export default function AlertQueue() {
                               </td>
                               <td className="py-1.5 pr-3 text-slate-300">{n.type}</td>
                               <td className="py-1.5 pr-3 text-right text-slate-300 tabular-nums">{Number(n.amount).toLocaleString()}</td>
-                              <td className={`py-1.5 pr-3 text-right tabular-nums ${
-                                (n.contribution || 0) > 0 ? "text-rose-400" : n.contribution < 0 ? "text-emerald-400" : "text-slate-400"
-                              }`}>
+                              <td className={`py-1.5 pr-3 text-right tabular-nums ${contributionColour(n.contribution)}`}>
                                 {formatContribution(n.contribution)}
                               </td>
                               <td className="py-1.5">
@@ -317,6 +329,11 @@ export default function AlertQueue() {
                           ))}
                         </tbody>
                       </table>
+                      <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+                        Contribution comes from the related transaction&apos;s own figures (amount, balances, type),
+                        not from its earlier decision. Red raises the fraud score, green lowers it, and
+                        grey &quot;≈ 0&quot; means it made no real difference.
+                      </p>
                     </div>
                   )}
 
